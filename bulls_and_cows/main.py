@@ -102,7 +102,7 @@ def update_numbers_to_check(
     return result
 
 
-def get_guess(check_these_numbers, possible_answers) -> str:
+def get_guess(check_these_numbers: dict, possible_answers: dict) -> str:
     best_guess, best_val = "", float("inf")
     for number, remained_variants in check_these_numbers.items():
         max_val = max(remained_variants)
@@ -148,9 +148,7 @@ def get_input(key: str, guess: str, table: List[str]) -> Any:
     return map(int, inp.split())
 
 
-def main(
-    key: Optional[str] = None,
-):
+def main(key: Optional[str] = None) -> int:
     rounds = 0
     table = sorted(generate_variants())
     possible_answers = {number: POSSIBLE_ANSWERS for number in table}
@@ -169,9 +167,9 @@ def main(
             table = update_table_after_guess(bulls, cows, guess, table)
             if table:
                 break
-            print('Enter valid answer.')
+            print("Enter valid answer.")
         if bulls == 4 or len(table) == 1:
-            rounds += (bulls != 4)
+            rounds += bulls != 4
             logger.debug(f"Your num is {table.pop()}. Won in {rounds} rounds!")
             return rounds
 
@@ -181,10 +179,4 @@ def main(
 
 
 if __name__ == "__main__":
-    utils.init_logger("INFO")
-    main_table = generate_variants()
-    for k, i in enumerate(sorted(main_table)[800:]):
-        if (j := main(i)) > 7:
-            print(f"!!!!!!!!! {j} {i}")
-        if not k % 50:
-            print(f"before {i} everything is ok, continue from {k}")
+    main()

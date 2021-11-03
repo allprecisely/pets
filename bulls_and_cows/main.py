@@ -67,81 +67,182 @@
 
 
 """
-from typing import List, Optional
+import logging
+import statistics
+import string
+from typing import Dict, List, Optional, Set, Tuple
+import utils
 
-ALNUM = '0123456789'
-POSSIBLE_VARIANTS: List[str] = []
+N = 4
+ALNUM = tuple(string.digits)
+POSSIBLE_ANSWERS = [
+    (0, 0),
+    (0, 1),
+    (0, 2),
+    (0, 3),
+    (0, 4),
+    (1, 0),
+    (1, 1),
+    (1, 2),
+    (1, 3),
+    (2, 0),
+    (2, 1),
+    (2, 2),
+    (3, 0),
+    (4, 0),
+]
+logger = logging.getLogger()
 
-POSSIBLE_ANSWERS = []
 
-
-def generate_variants(n: int, current_prefix: str = '') -> List[str]:
-    result = []
-    for i in ALNUM:
-        if i in current_prefix:
+def generate_variants(
+    current_prefix: str = "", n: int = N, alnum: Tuple[str, ...] = ALNUM
+) -> Set[str]:
+    result = set()
+    stars = current_prefix.count("*")
+    for i in alnum:
+        if stars and stars == alnum.count("*"):
             continue
-        if len(current_prefix) < n - 1:
-            result.extend(generate_variants(n, current_prefix + i))
-        else:
-            result.append(current_prefix + i)
+        if i not in current_prefix or i == "*":
+            if len(current_prefix) < n - 1:
+                result.update(generate_variants(current_prefix + i, n, alnum))
+            else:
+                result.add(current_prefix + i)
     return result
 
 
-def update_table_after_guess(cows: int, bulls: int, guess: str, table: List[str]) -> List[str]:
-    new_table = []
+def count_bulls_and_cows(guess: str, answer: str) -> Tuple[int, int]:
+    b = c = 0
+    for i, char in enumerate(guess):
+        if char == answer[i]:
+            b += 1
+        elif char in answer:
+            c += 1
+    return b, c
+
+
+def update_table_after_guess(
+    bulls: int, cows: int, guess: str, table: Set[str]
+) -> Set[str]:
+    new_table = set()
     for variant in table:
-        c, b = cows, bulls
-        for i in range(len(guess)):
-            if guess[i] == variant[i]:
-                b -= 1
-            elif guess[i] in variant:
-                c -= 1
-            if c < 0 or b < 0:
-                break
-        if not (c or b):
-            new_table.append(variant)
+        if (bulls, cows) == count_bulls_and_cows(guess, variant):
+            new_table.add(variant)
     return new_table
 
 
-def check_if_answer_possible(pair: tuple, answer: str, table: List[str]) -> bool:
-    new_table = []
-    for variant in table:
-        c, b = pair
-        for i in range(len(answer)):
-            if answer[i] == variant[i]:
-                b -= 1
-            elif answer[i] in variant:
-                c -= 1
-            if c < 0 or b < 0:
-                break
-        if not (c or b):
-            new_table.append(variant)
-    return bool(new_table)
+def update_numbers_to_check(
+    used_alnum: Tuple[str, ...],
+    possible_answers: Dict[str, List[Tuple[int, int]]],
+    table: Set[str],
+) -> Dict[str, List[int]]:
+    result = {}
+    not_used_alnum = ALNUM[len(used_alnum) :][:4]
+    gen_table = generate_variants(alnum=used_alnum + ("*",) * len(not_used_alnum))
+    for number in gen_table:
+        not_used_alnum_counter = 0
+        new_variant = number
+        for i, char in enumerate(number):
+            if char == "*":
+                new_variant = (
+                    new_variant[:i]
+                    + not_used_alnum[not_used_alnum_counter]
+                    + new_variant[i + 1 :]
+                )
+                not_used_alnum_counter += 1
+
+        result[new_variant] = []
+
+        new_key_possible_answers = []
+        for answer in possible_answers[new_variant]:
+            if n := update_table_after_guess(answer[0], answer[1], new_variant, table):
+                result[new_variant].append(len(n))
+                new_key_possible_answers.append(answer)
+        possible_answers[new_variant] = new_key_possible_answers
+        if possible_answers[new_variant] == [(4, 0)]:
+            return {new_variant: [1]}
+    return result
 
 
-def update_possible_answers(possible_answers, table) -> List[str]:
-    uniq_keys = []
-    for key, answers in possible_answers.items():
-        # пока слишком сложно
-        pass
+def get_guess(check_these_numbers, questions) -> str:
+    best_key, best_median, best_mean = "", float("inf"), float("inf")
+    for number, remained_variants in check_these_numbers.items():
+        if number in questions:
+            continue
+        median = statistics.median(remained_variants)
+        if median < best_median:
+            logger.debug(
+                "=> %s %s %s %s",
+                number,
+                remained_variants,
+                median,
+                sum(remained_variants),
+            )
+
+            best_key, best_median, best_mean = (
+                number,
+                median,
+                statistics.mean(remained_variants),
+            )
+        elif median == best_median:
+            if mean := statistics.mean(remained_variants) < best_mean:
+                best_key, best_median, best_mean = number, median, mean
+    return best_key
 
 
+def get_initial_options(first_guess: str = "0123") -> Dict[Tuple[int, int], str]:
+    result = {}
+    table = generate_variants()
+    possible_answers = {number: POSSIBLE_ANSWERS for number in table}
+    for answer in POSSIBLE_ANSWERS:
+        check_these_numbers = update_numbers_to_check(
+            tuple(first_guess), possible_answers, table
+        )
+        result[answer] = get_guess(check_these_numbers, [])
+    return result
 
-def main():
-    table = generate_variants(4)
-    possible_answers = {
-        key: [
-            (0, 0), (0, 1), (0, 2), (0, 3), (0, 4),
-            (1, 0), (1, 1), (1, 2), (1, 3),
-            (2, 0), (2, 1), (2, 2),
-            (3, 0),
-            (4, 0),
-        ] for key in table,
-    }
+
+def main(
+    key: Optional[str] = None,
+):
+    rounds = 0
+    table = generate_variants()
+    possible_answers = {number: POSSIBLE_ANSWERS for number in table}
+    used_alnum = ("0", "1", "2", "3")
+    check_these_numbers = {"0123": [0]}
+    questions = set()
     while True:
-        bulls, cows = map(int, input('bulls cows: ').split())
+        rounds += 1
+        guess = get_guess(check_these_numbers, questions)
+        questions.add(guess)
+        used_alnum = tuple(set(used_alnum + tuple(guess)))
+
+        if key:
+            inp = " ".join(map(str, count_bulls_and_cows(guess, key)))
+            logger.debug("=========================\nguess: %s; b c: %s", guess, inp)
+        else:
+            print(f'How many bulls and cows in "{guess}"?')
+            inp = input("bulls cows: ")
+            while tuple(map(int, inp.split())) not in POSSIBLE_ANSWERS:
+                print(f"your input is {tuple(inp.split())}")
+                inp = input("type correct number of bulls and cows: ")
+
+        bulls, cows = map(int, inp.split())
+        if bulls == N:
+            logger.debug(f"Won in {rounds}!")
+            return rounds
+        table = update_table_after_guess(bulls, cows, guess, table)
+
+        check_these_numbers = update_numbers_to_check(
+            used_alnum, possible_answers, table
+        )
 
 
+if __name__ == "__main__":
+    # utils.init_logger('INFO')
+    main("5086")
 
-# def check_guess(guess: str, remained_variants: List[str]) -> bool:
-
+    # main_table = generate_variants()
+    # for i in main_table:
+    #     if j := main(i) > 7:
+    #         print(f'!!!!!!!!! {j} ', end=' ')
+    #     print(i)

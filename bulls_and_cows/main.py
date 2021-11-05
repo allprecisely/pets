@@ -148,6 +148,40 @@ def get_input(key: str, guess: str, table: List[str]) -> Any:
     return map(int, inp.split())
 
 
+def graphical_main() -> int:
+    rounds = 0
+    table = sorted(generate_variants())
+    possible_answers = {number: POSSIBLE_ANSWERS for number in table}
+    used_alnum = ("0", "1", "2", "3")
+    check_these_numbers = {"0123": [0]}
+    while True:
+        rounds += 1
+        guess = get_guess(check_these_numbers, possible_answers)
+        if len(used_alnum) < 8:
+            used_alnum = tuple(set(used_alnum + tuple(guess)))
+        else:
+            used_alnum = ALNUM
+
+        inp = yield guess
+
+        while True:
+            bulls, cows = map(int, inp.split())
+            tmp_table = update_table_after_guess(bulls, cows, guess, table)
+            if tmp_table:
+                table = tmp_table
+                break
+            inp = yield False
+        if bulls == 4 or len(table) == 1:
+            rounds += bulls != 4
+            won_guess = table.pop()
+            logger.debug(f"Your num is {won_guess}. Won in {rounds} rounds!")
+            yield f'{won_guess}{rounds}'
+
+        check_these_numbers = update_numbers_to_check(
+            used_alnum, possible_answers, table
+        )
+
+
 def main(key: Optional[str] = None) -> int:
     rounds = 0
     table = sorted(generate_variants())

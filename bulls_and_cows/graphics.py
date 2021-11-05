@@ -1,17 +1,16 @@
+import time
 from tkinter import *
 from tkinter import messagebox
 
-from PIL import ImageTk, Image
-
-import main as handler
+import guesser
 
 root = Tk()
 
 
 def draw_a_string(guess_counter, current_guess, foo):
     widgets = [
-        Label(root, text=guess_counter, pady=10),
-        Label(root, text=current_guess, pady=10,),
+        Label(root, text=guess_counter, pady=5),
+        Label(root, text=current_guess, pady=5,),
         Entry(root),
         Entry(root),
         Button(root, text='Answer!', command=foo),
@@ -53,49 +52,99 @@ def guess(generator):
 
     guess_counter = 1
     current_guess = next(generator)
-    Label(root, text='№', justify=LEFT, pady=10).grid(row=2, column=0, stick='w')
-    Label(
-        root,
-        text='Guesses',
-        justify=LEFT,
-        pady=10,
-    ).grid(row=2, column=1, stick='w')
-    Label(root, text='Bulls', pady=10).grid(row=2, column=2, stick='w')
-    Label(root, text='Cows', pady=10).grid(row=2, column=3, stick='w')
     widgets = draw_a_string(guess_counter, current_guess, get_new_guess)
 
 
 def new_game():
     for widget in root.winfo_children():
         widget.destroy()
-    generator = handler.graphical_main()
-    Button(root, text='New game', command=new_game).grid(row=0, column=0, stick='we')
-    Button(root, text='Quit', command=lambda: root.quit()).grid(row=0, column=1, stick='w')
+    draw_game_field()
+    generator = guesser.graphical_main()
+
+
+def main_menu():
     Label(
-        root,
-        text='Come up with a 4-digit number with non-repeating digits!\nI\'ll try to guess.',
-        justify=LEFT,
-        pady=10,
-    ).grid(row=1, column=0, columnspan=4, stick='w')
-    Button(root, text='Ready!', command=lambda: guess(generator)).grid(row=1, column=4, stick='w')
+        root, text='BULLS & COWS', font=('Arial', 30),
+        height=3, anchor='s', pady=20
+    ).pack()
+    Button(root, text='New game', command=new_game).pack()
+    Button(root, text='Local game', command=main_menu).pack()
+    Button(root, text='Quit', command=lambda: root.quit()).pack()
 
 
-def _main():
-    photo = ImageTk.PhotoImage(Image.open('icon.jpeg'))
-    root.iconphoto(False, photo)
+def send():
+    pass
+
+
+def draw_game_field():
+    Label(root, text='YOU', pady=5).grid(row=0, column=0, columnspan=4)
+    Label(root, text='№', pady=5).grid(row=1, column=0)
+    Label(root, text='Guess', pady=5).grid(row=1, column=1)
+    Label(root, text='Bulls', pady=5).grid(row=1, column=2)
+    Label(root, text='Cows', pady=5).grid(row=1, column=3)
+
+    Label(root, text=' ' * 10, pady=5).grid(row=1, column=4)
+
+    Label(root, text='OPPONENT', pady=5).grid(row=0, column=5, columnspan=4)
+    Label(root, text='№', pady=5).grid(row=1, column=6)
+    Label(root, text='Guess', pady=5).grid(row=1, column=7)
+    Label(root, text='Bulls', pady=5).grid(row=1, column=8)
+    Label(root, text='Cows', pady=5).grid(row=1, column=9)
+
+    Label(root, text=' ' * 10, pady=5).grid(row=1, column=10)
+
+    Button(root, text='Send', command=send).grid(row=0, column=11, columnspan=2, rowspan=2)
+
+    Label(root, text='STATISTICS', pady=5).grid(row=2, column=11, columnspan=2)
+    Label(root, text='Time started   ', pady=5).grid(row=3, column=11, stick='w')
+    Label(root, text=time.strftime("%H:%M"), pady=5).grid(row=3, column=12)
+    Label(root, text='Time ended', pady=5).grid(row=4, column=11, stick='w')
+    Label(root, text='?', pady=5).grid(row=4, column=12)
+    Label(root, text='Duration', pady=5).grid(row=5, column=11, stick='w')
+    Label(root, text='?', pady=5).grid(row=5, column=12)
+
+    Label(root, text=' ', pady=5).grid(row=6, column=11)
+
+    Label(root, text='Player won', pady=5).grid(row=7, column=11, stick='w')
+    Label(root, text='?', pady=5).grid(row=7, column=12)
+
+    Label(root, text=' ', pady=5).grid(row=8, column=11)
+
+    Button(root, text='New game', command=new_game).grid(row=9, column=11, columnspan=2)
+    Button(root, text='Main menu', command=main_menu).grid(row=10, column=11, columnspan=2)
+    Button(root, text='Quit', command=lambda: root.quit()).grid(row=11, column=11, columnspan=2)
+
+
+def draw_round(n):
+    Label(root, text=str(n), pady=5).grid(row=n + 1, column=0)
+    Label(root, text=str(n), pady=5).grid(row=n + 1, column=6)
+    dct = {
+        'you_guess': Entry(width=5),
+        'you_bulls': Entry(width=2),
+        'you_cows': Entry(width=2),
+        'op_guess': Entry(width=5),
+        'op_bulls': Entry(width=2),
+        'op_cows': Entry(width=2),
+    }
+    dct['you_guess'].grid(row=n + 1, column=1)
+    dct['you_bulls'].grid(row=n + 1, column=1)
+    dct['you_cows'].grid(row=n + 1, column=1)
+    dct['op_guess'].grid(row=n + 1, column=1)
+    dct['op_bulls'].grid(row=n + 1, column=1)
+    dct['op_cows'].grid(row=n + 1, column=1)
+    return dct
+
+
+def main():
     root.title('Bulls and cows!')
-    root.geometry('600x500')
-    new_game()
+    root.geometry('530x360')
 
-    root.grid_columnconfigure(0, minsize=30)
-    root.grid_columnconfigure(1, minsize=30)
-    root.grid_columnconfigure(2, minsize=30)
-    root.grid_columnconfigure(3, minsize=30)
-    root.grid_columnconfigure(4, minsize=50)
-    root.grid_columnconfigure(5, minsize=50)
+    main_menu()
+    # draw_game_field()
+    # draw_round(1)
 
     root.mainloop()
 
 
 if __name__ == '__main__':
-    _main()
+    main()

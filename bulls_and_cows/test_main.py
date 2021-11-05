@@ -1,7 +1,7 @@
 import os
 import unittest
 
-import main
+import guesser
 
 
 class TestPreReqs(unittest.TestCase):
@@ -23,10 +23,10 @@ def manipulations(cases, func):
 
 
 if __name__ == "__main__":
-    all_cases = sorted(main.generate_variants())
+    all_cases = sorted(guesser.generate_variants())
     first_case = os.getenv("FIRST_CASE", "0123")
 
-    manipulations(all_cases[all_cases.index(first_case) :], main.main)
+    manipulations(all_cases[all_cases.index(first_case) :], guesser.main)
     log_file = "log_file.txt"
     with open(log_file, "w") as f:
         runner = unittest.TextTestRunner(f, verbosity=2)

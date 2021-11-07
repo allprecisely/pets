@@ -8,26 +8,22 @@ HOST = os.getenv('MULTIPLAYER_HOST', '')
 
 class Client:
     def __init__(self, port):
-        self.socket = socket.socket(type=socket.SOCK_STREAM | socket.SOCK_NONBLOCK)
-        self.loop = asyncio.get_event_loop()
+        self.socket = socket.socket()
         self.port = port
 
-    async def get_connection(self):
-        await self.loop.sock_connect(self.socket, ('localhost', self.port))
+    def get_connection(self):
+        self.socket.connect(('localhost', self.port))
 
-    async def get_data(self):
-        response = await self.loop.sock_recv(self.socket, 1024)
-        print(response)
+    def get_data(self):
+        response = self.socket.recv(1024)
         data = response.decode('utf8').split('\n')
-        print(data)
         dct = {'op_guess': data[0], 'you_bulls': data[1], 'you_cows': data[2]}
         return dct
 
-    async def send_data(self, guess='', bulls='', cows=''):
-        await self.loop.sock_sendall(self.socket, f'{guess}\n{bulls}\n{cows}'.encode('utf8'))
+    def send_data(self, guess='', bulls='', cows=''):
+        self.socket.sendall(f'{guess}\n{bulls}\n{cows}'.encode('utf8'))
 
     def close(self):
-        print(123)
         if not self.socket._closed:
             self.socket.close()
 

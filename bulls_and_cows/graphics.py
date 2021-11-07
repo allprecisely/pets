@@ -1,10 +1,9 @@
-import asyncio
+import socket
 import time
 from tkinter import *
 from tkinter import messagebox
 
 import guesser
-import multiplayer
 
 root = Tk()
 
@@ -76,109 +75,117 @@ def new_game():
     dct["op_guess"]["state"] = DISABLED
 
 
-async def async_guess(conn, dct, btn_send, rnd):
-    await conn.send_data(
-        dct["you_guess"], dct["op_bulls"].get() or "", dct["op_cows"].get() or ""
-    )
-    dct["you_guess"]["state"] = DISABLED
-    dct["op_bulls"]["state"] = DISABLED
-    dct["op_cows"]["state"] = DISABLED
-    rcv_data = await conn.get_data()
-    dct["op_guess"]["state"] = rcv_data["op_guess"]
-    dct["you_bulls"]["state"] = rcv_data["you_bulls"]
-    dct["you_cows"]["state"] = rcv_data["you_cows"]
+class Tmp:
+    a = ''
+    def get(self):
+        return ''
+
+    def __getitem__(self, item):
+        return self.a
+
+
+def multiplayer_guess(conn, last_dct, new_dct, btn_send, rnd):
+    data = "\n".join(
+        [
+            new_dct["you_guess"].get(),
+            last_dct.get("op_bulls", Tmp()).get() or "",
+            last_dct.get("op_cows", Tmp()).get() or "",
+        ]
+    ).encode('utf8')
+    conn.send(data)
+    new_dct["you_guess"]["state"] = DISABLED
+    last_dct.get("op_bulls", {'state': ''})["state"] = DISABLED
+    last_dct.get("op_cows", {'state': ''})["state"] = DISABLED
+    time.sleep(1)
+    rcv_data = conn.recv(1024).decode("utf8").split("\n")
+    for i, btn in enumerate(['op_guess', 'you_bulls', 'you_cows']):
+        new_dct[btn]["state"] = NORMAL
+        new_dct[btn].insert(0, rcv_data[i])
+        new_dct[btn]["state"] = DISABLED
+    new_dct["op_bulls"]["state"] = NORMAL
+    new_dct["op_cows"]["state"] = NORMAL
+    dct = draw_round(rnd)
     dct["you_guess"]["state"] = NORMAL
-    dct["op_bulls"]["state"] = NORMAL
-    dct["op_cows"]["state"] = NORMAL
-    btn_send["command"] = lambda: asyncio.create_task(
-        async_guess(conn, draw_round(rnd), btn_send, rnd + 1)
+    btn_send["command"] = lambda: multiplayer_guess(
+        conn, new_dct, dct, btn_send, rnd + 1
     )
+#
+#
+# def press_key(event, conn, dct, btn_send, rnd):
+#     if event.char == "\r":
+#         multiplayer_guess(conn, dct, btn_send, rnd)
 
 
-def handle_async_guess(conn, dct, btn_send, rnd):
-    asyncio.create_task(async_guess(conn, dct, btn_send, rnd + 1))
-
-
-def press_key(event, conn, dct, btn_send, rnd):
-    if event.char == '\r':
-        handle_async_guess(conn, dct, btn_send, rnd)
-
-
-async def async_new_game(conn, connection_task):
+def multiplayer_new_game(conn, sock=None, port=None):
     for widget in root.winfo_children():
         widget.destroy()
     rnd = 1
-    btn_send = draw_game_field()
-    dct = draw_round(rnd)
+    btn_send = draw_game_field(conn, sock)
+    last_dct = draw_round(rnd)
 
-    if connection_task:
-        print(123)
-        await connection_task
-        print(1234)
+    if port:
         Label(root, text="P").grid(row=11, column=0)
-        Label(root, text=str(multiplayer.PORT)).grid(row=11, column=1)
+        Label(root, text=str(port)).grid(row=11, column=1)
         messagebox.showinfo("Game started", "Your turn. Guess...")
-        btn_send["command"] = lambda: handle_async_guess(conn, dct, btn_send, rnd)
-        root.bind("<Key>", lambda event: press_key(event, conn, dct, btn_send, rnd))
-        dct["you_guess"]["state"] = NORMAL
+        btn_send["command"] = lambda: multiplayer_guess(conn, {}, last_dct, btn_send, rnd + 1)
+        # root.bind("<Key>", lambda event: press_key(event, conn, dct, btn_send, rnd + 1))
+        last_dct["you_guess"]["state"] = NORMAL
     else:
-        print(1235)
-        rcv_data = await conn.get_data()
-        print(1236)
+        rcv_data = conn.recv(1024).decode("utf8").split("\n")
         messagebox.showinfo("Game started", "Your turn. Guess...")
-        dct["op_guess"]["state"] = rcv_data["op_guess"]
-        dct["you_bulls"]["state"] = rcv_data["you_bulls"]
-        dct["you_cows"]["state"] = rcv_data["you_cows"]
-        dct["you_guess"]["state"] = NORMAL
-        dct["op_bulls"]["state"] = NORMAL
-        dct["op_cows"]["state"] = NORMAL
-        btn_send["command"] = lambda: handle_async_guess(
+        for i, btn in enumerate(['op_guess', 'you_bulls', 'you_cows']):
+            last_dct["op_guess"]["state"] = NORMAL
+            last_dct[btn].insert(0, rcv_data[i])
+            last_dct["op_guess"]["state"] = DISABLED
+        last_dct["you_guess"]["state"] = NORMAL
+        last_dct["op_bulls"]["state"] = NORMAL
+        last_dct["op_cows"]["state"] = NORMAL
+        btn_send["command"] = lambda: multiplayer_guess(
             conn,
+            last_dct,
             draw_round(rnd),
             btn_send,
-            rnd,
+            rnd + 1,
         )
-        root.bind(
-            "<Key>",
-            lambda event: press_key(
-                event,
-                conn,
-                draw_round(rnd),
-                btn_send,
-                rnd,
-            ),
-        )
+        # root.bind(
+        #     "<Key>",
+        #     lambda event: press_key(
+        #         event,
+        #         conn,
+        #         draw_round(rnd),
+        #         btn_send,
+        #         rnd + 1,
+        #     ),
+        # )
 
 
-async def async_main(port=None):
-    connection_task = None
-    time_task = asyncio.create_task(asyncio.sleep(120))
-    while True:
+def connect(port=None, *old_buttons):
+    sock = socket.socket()
+    if port:
         try:
-            if port:
-                conn = multiplayer.Client(port)
-                await conn.get_connection()
-            else:
-                conn = multiplayer.Server()
-                connection_task = asyncio.create_task(conn.get_connection())
-                messagebox.showinfo(
-                    "Ожидание",
-                    f"Порт: {multiplayer.PORT}. Ждем, пока подключится 2 игрок",
-                )
-            break
-        except Exception as ex:
-            print(ex)
-            join_game()
-    try:
-        await asyncio.gather(
-            async_new_game(conn, connection_task), time_task
-        )
-    except KeyboardInterrupt:
-        conn.close()
-
-
-def connect(port=None):
-    asyncio.run(async_main(port))
+            sock.connect(("localhost", int(port)))
+        except ConnectionRefusedError:
+            messagebox.showinfo(
+                "Ошибка",
+                "Кривой порт((",
+            )
+            join_game(*old_buttons)
+            return
+        multiplayer_new_game(sock)
+    else:
+        port = 8765
+        while True:
+            try:
+                sock.bind(("", port))
+                print(port)
+                break
+            except OSError:
+                port += 1
+        Label(root, text=f"Ожидание 2 игрока... Порт: {port}", pady=5).pack()
+        sock.listen(1)
+        conn, addr = sock.accept()
+        print(f"connected by: {addr}")
+        multiplayer_new_game(conn, sock, port)
 
 
 def join_game(*old_buttons):
@@ -186,7 +193,9 @@ def join_game(*old_buttons):
         btn.destroy()
     entry_port = Entry(root)
     btn_connect = Button(
-        root, text="Connect", command=lambda: connect(entry_port.get())
+        root,
+        text="Connect",
+        command=lambda: connect(entry_port.get(), entry_port, btn_connect, btn_quit),
     )
     btn_quit = Button(root, text="Quit", command=root.quit)
     entry_port.pack()
@@ -231,7 +240,15 @@ def send():
     pass
 
 
-def draw_game_field():
+def quit_game(conn=None, sock=None):
+    if conn:
+        conn.close()
+    if sock:
+        sock.close()
+    root.quit()
+
+
+def draw_game_field(conn=None, sock=None):
     Label(root, text="YOU", pady=5).grid(row=0, column=0, columnspan=4)
     Label(root, text="№", pady=5).grid(row=1, column=0)
     Label(root, text="Guess", pady=5).grid(row=1, column=1)
@@ -270,7 +287,7 @@ def draw_game_field():
     Button(root, text="Main menu", command=main_menu).grid(
         row=10, column=11, columnspan=2
     )
-    Button(root, text="Quit", command=root.quit).grid(row=11, column=11, columnspan=2)
+    Button(root, text="Quit", command=lambda: quit_game(conn, sock)).grid(row=11, column=11, columnspan=2)
     return btn_send
 
 

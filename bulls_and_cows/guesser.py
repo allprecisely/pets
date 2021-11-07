@@ -148,7 +148,7 @@ def get_input(key: str, guess: str, table: List[str]) -> Any:
     return map(int, inp.split())
 
 
-def graphical_main() -> int:
+def graphical_main():
     rounds = 0
     table = sorted(generate_variants())
     possible_answers = {number: POSSIBLE_ANSWERS for number in table}

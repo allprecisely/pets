@@ -1,11 +1,14 @@
 import socket
 import time
+import threading
 from tkinter import *
 from tkinter import messagebox
 
 import guesser
+import multiplayer
 
 root = Tk()
+WAIT_CONNECTION_TIME = 60000  # ms
 
 
 def draw_a_string(guess_counter, current_guess, foo):
@@ -76,9 +79,10 @@ def new_game():
 
 
 class Tmp:
-    a = ''
+    a = ""
+
     def get(self):
-        return ''
+        return ""
 
     def __getitem__(self, item):
         return self.a
@@ -91,14 +95,14 @@ def multiplayer_guess(conn, last_dct, new_dct, btn_send, rnd):
             last_dct.get("op_bulls", Tmp()).get() or "",
             last_dct.get("op_cows", Tmp()).get() or "",
         ]
-    ).encode('utf8')
+    ).encode("utf8")
     conn.send(data)
     new_dct["you_guess"]["state"] = DISABLED
-    last_dct.get("op_bulls", {'state': ''})["state"] = DISABLED
-    last_dct.get("op_cows", {'state': ''})["state"] = DISABLED
+    last_dct.get("op_bulls", {"state": ""})["state"] = DISABLED
+    last_dct.get("op_cows", {"state": ""})["state"] = DISABLED
     time.sleep(1)
     rcv_data = conn.recv(1024).decode("utf8").split("\n")
-    for i, btn in enumerate(['op_guess', 'you_bulls', 'you_cows']):
+    for i, btn in enumerate(["op_guess", "you_bulls", "you_cows"]):
         new_dct[btn]["state"] = NORMAL
         new_dct[btn].insert(0, rcv_data[i])
         new_dct[btn]["state"] = DISABLED
@@ -109,6 +113,8 @@ def multiplayer_guess(conn, last_dct, new_dct, btn_send, rnd):
     btn_send["command"] = lambda: multiplayer_guess(
         conn, new_dct, dct, btn_send, rnd + 1
     )
+
+
 #
 #
 # def press_key(event, conn, dct, btn_send, rnd):
@@ -127,13 +133,15 @@ def multiplayer_new_game(conn, sock=None, port=None):
         Label(root, text="P").grid(row=11, column=0)
         Label(root, text=str(port)).grid(row=11, column=1)
         messagebox.showinfo("Game started", "Your turn. Guess...")
-        btn_send["command"] = lambda: multiplayer_guess(conn, {}, last_dct, btn_send, rnd + 1)
+        btn_send["command"] = lambda: multiplayer_guess(
+            conn, {}, last_dct, btn_send, rnd + 1
+        )
         # root.bind("<Key>", lambda event: press_key(event, conn, dct, btn_send, rnd + 1))
         last_dct["you_guess"]["state"] = NORMAL
     else:
         rcv_data = conn.recv(1024).decode("utf8").split("\n")
         messagebox.showinfo("Game started", "Your turn. Guess...")
-        for i, btn in enumerate(['op_guess', 'you_bulls', 'you_cows']):
+        for i, btn in enumerate(["op_guess", "you_bulls", "you_cows"]):
             last_dct["op_guess"]["state"] = NORMAL
             last_dct[btn].insert(0, rcv_data[i])
             last_dct["op_guess"]["state"] = DISABLED
@@ -159,63 +167,92 @@ def multiplayer_new_game(conn, sock=None, port=None):
         # )
 
 
-def connect(port=None, *old_buttons):
-    sock = socket.socket()
-    if port:
-        try:
-            sock.connect(("localhost", int(port)))
-        except ConnectionRefusedError:
-            messagebox.showinfo(
-                "Ошибка",
-                "Кривой порт((",
-            )
-            join_game(*old_buttons)
-            return
-        multiplayer_new_game(sock)
+def check_status(interface, port_entry, lbl, counter, *active_btns):
+    if not counter or getattr(interface, 'try_another_server'):
+        threading.Thread(target=interface.close).start()
+        messagebox.showinfo("Ошибка", interface.error_text)
+        if port_entry:
+            port_entry.delete(0, LAST)
+        lbl.destroy()
+        for btn in active_btns:
+            btn["state"] = ACTIVE
+    elif not interface.connected:
+        root.after(
+            250,
+            check_status,
+            interface,
+            port_entry,
+            lbl,
+            counter - 250,
+            *active_btns,
+        )
     else:
-        port = 8765
-        while True:
-            try:
-                sock.bind(("", port))
-                print(port)
-                break
-            except OSError:
-                port += 1
-        Label(root, text=f"Ожидание 2 игрока... Порт: {port}", pady=5).pack()
-        sock.listen(1)
-        conn, addr = sock.accept()
-        print(f"connected by: {addr}")
-        multiplayer_new_game(conn, sock, port)
+        multiplayer_new_game(interface)
 
 
-def join_game(*old_buttons):
-    for btn in old_buttons:
-        btn.destroy()
-    entry_port = Entry(root)
-    btn_connect = Button(
+def start_game(*active_btns, port_entry=None):
+    if port_entry:
+        port = int(port_entry.get())
+        interface = multiplayer.Client(port)
+    else:
+        interface = multiplayer.Server()
+
+    for btn in active_btns:
+        btn["state"] = DISABLED
+    lbl = Label(root, text=interface.connect_text, pady=5)
+    lbl.pack()
+
+    thread_connection = threading.Thread(target=interface.connect, daemon=True)
+    root.after(
+        250,
+        check_status,
+        interface,
+        port_entry,
+        lbl,
+        WAIT_CONNECTION_TIME,
+        *active_btns,
+    )
+    thread_connection.start()
+
+
+def join_game(old_frame):
+    old_frame.destroy()
+    port_entry = Entry(root)
+    port_entry.insert(0, str(multiplayer.PORT))
+    active_button = Button(
         root,
         text="Connect",
-        command=lambda: connect(entry_port.get(), entry_port, btn_connect, btn_quit),
+        command=lambda: start_game(active_button, port_entry=port_entry),
     )
-    btn_quit = Button(root, text="Quit", command=root.quit)
-    entry_port.pack()
-    btn_connect.pack()
-    btn_quit.pack()
+    btns = [
+        port_entry,
+        active_button,
+        Button(root, text="Quit", command=root.quit),
+    ]
+    for btn in btns:
+        btn.pack()
 
 
-def local_game(*old_buttons):
-    for btn in old_buttons:
-        btn.destroy()
-    btn_create_game = Button(root, text="Create game", command=connect)
-    btn_join_game = Button(
-        root,
+def local_game(old_frame):
+    old_frame.destroy()
+    frame_local_game = Frame(root)
+    join_btn = Button(
+        frame_local_game,
         text="Join game",
-        command=lambda: join_game(btn_create_game, btn_join_game, btn_quit),
+        command=lambda: join_game(frame_local_game),
     )
-    btn_quit = Button(root, text="Quit", command=root.quit)
-    btn_create_game.pack()
-    btn_join_game.pack()
-    btn_quit.pack()
+    create_button_btn = Button(
+        frame_local_game,
+        text="Create game",
+        command=lambda: start_game(join_btn, create_button_btn),
+    )
+    btns = [
+        create_button_btn,
+        join_btn,
+        Button(frame_local_game, text="Quit", command=root.quit),
+    ]
+    for btn in [frame_local_game, *btns]:
+        btn.pack()
 
 
 def main_menu():
@@ -224,16 +261,18 @@ def main_menu():
     Label(
         root, text="BULLS & COWS", font=("Arial", 30), height=3, anchor="s", pady=20
     ).pack()
-    btn_new_game = Button(root, text="New game", command=new_game)
-    btn_local_game = Button(
-        root,
-        text="Local game",
-        command=lambda: local_game(btn_new_game, btn_local_game, btn_quit),
-    )
-    btn_quit = Button(root, text="Quit", command=root.quit)
-    btn_new_game.pack()
-    btn_local_game.pack()
-    btn_quit.pack()
+    frame_main_menu = Frame(root)
+    btns = [
+        Button(frame_main_menu, text="New game", command=new_game),
+        Button(
+            frame_main_menu,
+            text="Local game",
+            command=lambda: local_game(frame_main_menu),
+        ),
+        Button(frame_main_menu, text="Quit", command=root.quit),
+    ]
+    for btn in [frame_main_menu, *btns]:
+        btn.pack()
 
 
 def send():
@@ -287,7 +326,9 @@ def draw_game_field(conn=None, sock=None):
     Button(root, text="Main menu", command=main_menu).grid(
         row=10, column=11, columnspan=2
     )
-    Button(root, text="Quit", command=lambda: quit_game(conn, sock)).grid(row=11, column=11, columnspan=2)
+    Button(root, text="Quit", command=lambda: quit_game(conn, sock)).grid(
+        row=11, column=11, columnspan=2
+    )
     return btn_send
 
 
@@ -317,6 +358,7 @@ def main():
 
     main_menu()
 
+    # threading.Thread(target=root.mainloop).run()
     root.mainloop()
 
 

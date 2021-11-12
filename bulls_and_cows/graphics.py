@@ -249,7 +249,7 @@ def start_game(*active_btns, btn_quit=None, btn_main_menu=None, entry_ip=None):
     thread_connection.start()
 
 
-def draw_join_game(old_frame):
+def draw_join_game():
     def validate_ip_address(act, ind, new_val, old_val):
         # при выделении участка и заменой его - ошибки
         # отсутствие обработки ctrl команд
@@ -275,58 +275,34 @@ def draw_join_game(old_frame):
             entry.insert(0, default_text)
             entry.config(fg="grey")
 
-    old_frame.destroy()
-    entry_ip = Entry(
-        root,
-        fg="grey",
-        validate="key",
-    )
+    frame = root.nametowidget(".frame_local_game")
+    btn_connect = frame.nametowidget("btn_create_game")
+    btn_connect.config(text='Connect')
+    frame.nametowidget("btn_join_game").destroy()
+
+    entry_ip = Entry(frame, fg="grey", validate="key", name="entry_ip")
     entry_ip.config(validatecommand=decor_register(entry_ip, validate_ip_address))
     ip_example = "192.168.0.1"
     entry_ip.insert(0, ip_example)
     for sequence in ("<FocusIn>", "<FocusOut>"):
         entry_ip.bind(sequence, lambda event: entry_ip_handle(entry_ip, ip_example))
-    command_connect = lambda: start_game(active_button, entry_ip=entry_ip, btn_quit=btns[3], btn_main_menu=btns[2])
-    active_button = Button(root, text="Connect", command=command_connect)
-    handle_game_key(command_connect, entry_ip)
-    btns = [
-        entry_ip,
-        active_button,
-        Button(
-            root,
-            text="Main menu",
-            command=draw_main_menu
-        ),
-        Button(root, text="Quit", command=_quit)
-    ]
-    for btn in btns:
-        btn.pack()
+    handle_game_key(start_game, entry_ip)
+    entry_ip.pack(before=btn_connect)
 
 
 def draw_local_game(old_frame):
     old_frame.destroy()
-    frame_local_game = Frame(root)
-    create_button_btn = Button(
-        frame_local_game,
-        text="Create game",
-        command=lambda: start_game(*btns[:2], btn_quit=btns[3], btn_main_menu=btns[2]),
-    )
-    btns = [
-        create_button_btn,
-        Button(
-            frame_local_game,
-            text="Join game",
-            command=lambda: draw_join_game(frame_local_game),
-        ),
-        Button(
-            frame_local_game,
-            text="Main menu",
-            command=draw_main_menu
-        ),
-        Button(frame_local_game, text="Quit", command=_quit),
-    ]
-    for btn in [frame_local_game, *btns]:
-        btn.pack()
+    frame = Frame(root, name='frame_local_game')
+    frame.pack()
+    Button(frame, text="Create game", command=start_game, name='btn_create_game').pack()
+    Button(frame, text="Join game", command=draw_join_game, name='btn_join_game').pack()
+    Button(
+        frame,
+        text="Main menu",
+        command=draw_main_menu,
+        name='btn_main_menu'
+    ).pack()
+    Button(frame, text="Quit", command=_quit, name='btn_quit').pack()
 
 
 def draw_main_menu(interface=None):
@@ -365,7 +341,6 @@ def draw_game_field():
         Button(top_level, text="Yes", command=lambda: inner(yes)).grid(row=1, column=0)
         Button(top_level, text="No", command=lambda: inner(no)).grid(row=1, column=1)
 
-    game_field = {}
     Label(root, text="YOU", pady=5).grid(row=0, column=0, columnspan=4)
     Label(root, text="№", pady=5).grid(row=1, column=0)
     Label(root, text="Guess", pady=5).grid(row=1, column=1)
@@ -382,47 +357,41 @@ def draw_game_field():
 
     Label(root, text=" " * 10, pady=5).grid(row=1, column=10)
 
-    game_field["btn_send"] = Button(root, text="Send")
-    game_field["btn_send"].grid(row=0, column=11, columnspan=2, rowspan=2)
+    Button(root, text="Send", name='btn_send').grid(
+        row=0, column=11, columnspan=2, rowspan=2
+    )
 
     Label(root, text="STATISTICS", pady=5).grid(row=2, column=11, columnspan=2)
     Label(root, text="Time started   ", pady=5).grid(row=3, column=11, stick="w")
-    game_field["lbl_time_started"] = Label(root, text="?", pady=5)
-    game_field["lbl_time_started"].grid(row=3, column=12)
+    Label(root, text="?", pady=5, name='lbl_time_started').grid(row=3, column=12)
     Label(root, text="Time ended", pady=5).grid(row=4, column=11, stick="w")
-    game_field["lbl_time_ended"] = Label(root, text="?", pady=5)
-    game_field["lbl_time_ended"].grid(row=4, column=12)
+    Label(root, text="?", pady=5, name='lbl_time_ended').grid(row=4, column=12)
     Label(root, text="Duration", pady=5).grid(row=5, column=11, stick="w")
-    game_field["lbl_duration"] = Label(root, text="?", pady=5)
-    game_field["lbl_duration"].grid(row=5, column=12)
+    Label(root, text="?", pady=5, name='lbl_duration').grid(row=5, column=12)
 
     Label(root, text=" ", pady=5).grid(row=6, column=11)
 
     Label(root, text="Player won", pady=5).grid(row=7, column=11, stick="w")
-    game_field["lbl_player_won"] = Label(root, text="?", pady=5)
-    game_field["lbl_player_won"].grid(row=7, column=12)
+    Label(root, text="?", pady=5, name='lbl_player_won').grid(row=7, column=12)
 
     Label(root, text=" ", pady=5).grid(row=8, column=11)
 
-    game_field["btn_new_game"] = Button(
+    Button(
         root,
         text="New game",
         command=multiplayer_new_game,
         state=DISABLED,
-    )
-    game_field["btn_new_game"].grid(row=9, column=11, columnspan=2)
-    game_field["btn_main_menu"] = Button(
+        name='btn_new_game'
+    ).grid(row=9, column=11, columnspan=2)
+    Button(
         root,
         text="Main menu",
         command=lambda: pop_up(
             yes=draw_main_menu, text="Are you sure, that you want to leave the game?"
         ),
-    )
-    game_field["btn_main_menu"].grid(row=10, column=11, columnspan=2)
-    game_field["btn_quit"] = Button(root, text="Quit", command=_quit)
-    game_field["btn_quit"].grid(row=11, column=11, columnspan=2)
-
-    return game_field
+        name='btn_main_menu',
+    ).grid(row=10, column=11, columnspan=2)
+    Button(root, text="Quit", command=_quit, name='btn_quit').grid(row=11, column=11, columnspan=2)
 
 
 def draw_round(n, frame=root):
@@ -439,30 +408,22 @@ def draw_round(n, frame=root):
 
     Label(frame, text=str(n), pady=5).grid(row=n + 1, column=0)
     Label(frame, text=str(n), pady=5).grid(row=n + 1, column=6)
-    dct = {
-        "you_guess": Entry(frame, name='you_guess', width=5, state=DISABLED),
-        "you_bulls": Entry(frame, width=2, state=DISABLED),
-        "you_cows": Entry(frame, width=2, state=DISABLED),
-        "op_guess": Entry(frame, width=5, state=DISABLED),
-        "op_bulls": Entry(frame, width=2, state=DISABLED),
-        "op_cows": Entry(frame, width=2, state=DISABLED),
+    entries = {
+        1: Entry(frame, width=5, name=f'you_guess_{n}'),
+        3: Entry(frame, width=2, name=f'you_bulls_{n}'),
+        7: Entry(frame, width=2, name=f'you_cows_{n}'),
+        8: Entry(frame, width=5, name=f'op_guess_{n}'),
+        9: Entry(frame, width=2, name=f'op_bulls_{n}'),
+        2: Entry(frame, width=2, name=f'op_cows_{n}'),
     }
-    for key, entry in dct.items():
-        if key.endswith("guess"):
-            entry.config(
-                validate="key", validatecommand=decor_register(entry, validate_guess)
-            )
-        else:
-            entry.config(
-                validate="key", validatecommand=decor_register(entry, validate_digit)
-            )
-    dct["you_guess"].grid(row=n + 1, column=1)
-    dct["you_bulls"].grid(row=n + 1, column=2)
-    dct["you_cows"].grid(row=n + 1, column=3)
-    dct["op_guess"].grid(row=n + 1, column=7)
-    dct["op_bulls"].grid(row=n + 1, column=8)
-    dct["op_cows"].grid(row=n + 1, column=9)
-    return dct
+    for column, entry in entries.items():
+        validate_func = validate_guess if column in (1, 8) else validate_digit
+        entry.config(
+            validate="key",
+            validatecommand=decor_register(entry, validate_func),
+            state=DISABLED,
+        )
+        entry.grid(row=n + 1, column=column)
 
 
 def get_val_before_validate(act, ind, new_val, old_val):

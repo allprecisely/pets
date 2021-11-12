@@ -1,7 +1,9 @@
+import logging
 import os
 import socket
 import time
 
+logger = logging.getLogger(__name__)
 PORT = int(os.getenv("MULTIPLAYER_PORT", 8765))
 HOST = os.getenv("MULTIPLAYER_HOST", "")
 
@@ -17,12 +19,14 @@ class Client:
         self.sock = socket.socket()
         self.ip_address = ip_address
         self.error_text = (
-            "Соединение не установлено, " "т.к. порт не существует или проблема с сетью"
+            "Connection refused as host doesn't exist"
+            " or there are problems with connection"
         )
         self.connected = False
-        self.connect_text = "Ожидание подключения к серверу..."
+        self.connect_text = "Waiting for connection..."
         self.data = None
         self.try_another_server = False
+        self.closed = False
 
     def __enter__(self):
         return self
@@ -31,6 +35,7 @@ class Client:
         self.close()
 
     def connect(self, timeout=5):
+        self.closed = False
         start_connection = time.time()
         port = PORT
         while time.time() - start_connection < timeout:
@@ -59,6 +64,7 @@ class Client:
     def close(self):
         if not self.sock._closed:
             self.sock.close()
+        self.closed = True
 
 
 class Server:
@@ -75,12 +81,13 @@ class Server:
                 print(f"new port: {self.port}")
         self.sock.listen(1)
         self.conn = None
-        self.error_text = "Время ожидания истекло"
+        self.error_text = "The time of connection has reached out"
         self.connect_text = (
-            f"Ожидание подключения второго игрока по ip {self.ip_address}"
+            f"Waiting other player via ip {self.ip_address}"
         )
         self.connected = False
         self.data = None
+        self.closed = False
 
     def __enter__(self):
         return self
@@ -89,9 +96,13 @@ class Server:
         self.close()
 
     def connect(self):
-        self.conn, addr = self.sock.accept()
-        self.connected = True
-        print(f"connected by: {addr}")
+        self.closed = False
+        try:
+            self.conn, addr = self.sock.accept()
+            self.connected = True
+            logger.info("connected by: %s", addr)
+        except ConnectionAbortedError:
+            logger.info('User has stopped to wait')
 
     def get_data(self):
         response = self.conn.recv(1024)
@@ -105,3 +116,4 @@ class Server:
             self.conn.close()
         if not self.sock._closed:
             self.sock.close()
+        self.closed = True

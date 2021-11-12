@@ -1,4 +1,3 @@
-import os
 import unittest
 
 import guesser
@@ -23,11 +22,11 @@ def manipulations(cases, func):
 
 
 if __name__ == "__main__":
-    all_cases = sorted(guesser.generate_variants())
-    first_case = os.getenv("FIRST_CASE", "0123")
+    all_cases = guesser.generate_variants()
 
-    manipulations(all_cases[all_cases.index(first_case) :], guesser.main)
-    log_file = "log_file.txt"
-    with open(log_file, "w") as f:
-        runner = unittest.TextTestRunner(f, verbosity=2)
-        unittest.main(testRunner=runner)
+    manipulations(list(all_cases)[:10], guesser.main)
+    # log_file = "test_log_file.txt"
+    # with open(log_file, "w") as f:
+    #     runner = unittest.TextTestRunner(f, verbosity=2)
+    #     unittest.main(testRunner=runner)
+    unittest.main()

@@ -8,9 +8,9 @@
 4) повторяем 2-3, пока пользователь не напишет 0 4 или в таблице 1 останется одно число
 """
 import logging
+import random
 import string
 from typing import Any, Dict, List, Optional, Set, Tuple
-import utils
 
 N = 4
 ALNUM = tuple(string.digits)
@@ -75,7 +75,7 @@ def update_numbers_to_check(
     table: List[str],
 ) -> Dict[str, List[int]]:
     result = {}
-    not_used_alnum = ALNUM[len(used_alnum) :][:4]
+    not_used_alnum = list(set(ALNUM) - set(used_alnum))[:4]
     gen_table = sorted(
         generate_variants(alnum=used_alnum + ("*",) * len(not_used_alnum))
     )
@@ -125,57 +125,52 @@ def get_initial_options(guess: str = "0123") -> Any:
     return result
 
 
-def get_input(key: str, guess: str, table: List[str]) -> Any:
+def get_input(key: str, guess: str) -> Any:
     if key:
         inp = " ".join(map(str, count_bulls_and_cows(guess, key)))
-        logger.debug(
-            "=> guess: %s; b c: %s; len: %s\n",
-            guess,
-            inp,
-            len(table),
-        )
     else:
-        print(f'How many bulls and cows in "{guess}"?')
-        inp = input("bulls cows: ")
+        inp = input(f'How many bulls and cows in "{guess}"?')
         while True:
-            try:
-                if tuple(map(str, inp.split())) in POSSIBLE_ANSWERS:
-                    break
-            except:
-                pass
+            if tuple(map(str, inp.split())) in POSSIBLE_ANSWERS:
+                break
             inp = input("type correct number of bulls and cows: ")
 
     return map(int, inp.split())
 
 
 def graphical_main():
-    rounds = 0
     table = sorted(generate_variants())
     possible_answers = {number: POSSIBLE_ANSWERS for number in table}
-    used_alnum = ("0", "1", "2", "3")
-    check_these_numbers = {"0123": [0]}
+    initial_guess = random.choice(table)
+    computer_number = random.choice(table)
+    while computer_number == initial_guess:
+        computer_number = random.choice(table)
+    print(computer_number)
+    used_alnum = tuple(initial_guess)
+    check_these_numbers = {initial_guess: [0]}
     while True:
-        rounds += 1
         guess = get_guess(check_these_numbers, possible_answers)
         if len(used_alnum) < 8:
-            used_alnum = tuple(set(used_alnum + tuple(guess)))
+            used_alnum = tuple(set(used_alnum) | set(guess))
         else:
             used_alnum = ALNUM
 
-        inp = yield guess
+        player_guess = yield guess
 
+        human_bc = None
         while True:
-            bulls, cows = map(int, inp.split())
+            if human_bc:
+                human_bc = yield False
+            else:
+                human_bc = yield " ".join(
+                    map(str, count_bulls_and_cows(player_guess, computer_number))
+                )
+            bulls, cows = map(int, human_bc.split())
             tmp_table = update_table_after_guess(bulls, cows, guess, table)
             if tmp_table:
                 table = tmp_table
+                yield True
                 break
-            inp = yield False
-        if bulls == 4 or len(table) == 1:
-            rounds += bulls != 4
-            won_guess = table.pop()
-            logger.debug(f"Your num is {won_guess}. Won in {rounds} rounds!")
-            yield f'{won_guess}{rounds}'
 
         check_these_numbers = update_numbers_to_check(
             used_alnum, possible_answers, table
@@ -197,7 +192,7 @@ def main(key: Optional[str] = None) -> int:
             used_alnum = ALNUM
 
         while True:
-            bulls, cows = get_input(key, guess, table)
+            bulls, cows = get_input(key, guess)
             table = update_table_after_guess(bulls, cows, guess, table)
             if table:
                 break

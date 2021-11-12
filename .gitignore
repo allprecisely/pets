@@ -3,3 +3,5 @@
 *.pyc
 venv
 for_checks.py
+not_realized.py
+test_log_file.txt

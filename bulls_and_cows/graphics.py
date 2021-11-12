@@ -11,103 +11,76 @@ import threading
 from tkinter import *
 from tkinter import messagebox
 
-import guesser
+import guesser2 as guesser
 import multiplayer
 
 root = Tk()
 WAIT_CONNECTION_TIME = 60000  # ms
 
 
-def guess(generator):
-    def get_new_guess():
-        nonlocal current_guess, guess_counter, widgets
-        c = widgets[3].get()
-        b = widgets[2].get()
-        if not c:
-            widgets[3].insert(0, "0")
-        if not b:
-            widgets[2].insert(0, "0")
-        widgets[2]["state"] = DISABLED
-        widgets[3]["state"] = DISABLED
-        widgets[4]["state"] = DISABLED
+class SingleGame:
+    def __init__(self):
+        for widget in root.winfo_children():
+            widget.destroy()
+        self.rounds = []
+        self.generator = guesser.graphical_main()
+        self.game_field = draw_game_field()
+        self.op_guess = None
+        self.you_bulls, self.you_cows = None, None
+        self.op_bulls, self.op_cows = None, None
+        self.guess()
 
-        current_guess = generator.send(f"{b or 0} {c or 0}")
-        if not current_guess:
-            messagebox.showinfo("Неверные данные!")
-            for widget in widgets:
-                widget.destroy()
-            widgets = draw_round(guess_counter)
+    def answer(self):
+        if not (self.op_bulls.get() and self.op_cows.get()):
+            messagebox.showinfo("Error", "Fields cannot be empty")
             return
-        if len(current_guess) > 4:
-            messagebox.showinfo(
-                f"Победа за {current_guess[4:]} попыток",
-                f"Ваше число: {current_guess[:4]}",
-            )
+        is_correct = self.generator.send(f"{self.op_bulls.get()} {self.op_cows.get()}")
+        if not is_correct:
+            messagebox.showinfo("Error", "Data you sent are not valid")
             return
-        guess_counter += 1
+        self.op_guess = next(self.generator)
+        self.op_bulls.config(state=DISABLED)
+        self.op_cows.config(state=DISABLED)
+        insert_value(self.rounds[-1]["you_bulls"], self.you_bulls)
+        insert_value(self.rounds[-1]["you_cows"], self.you_cows)
+        self.guess()
 
-        widgets = draw_round(guess_counter)
+    def get_guess_back(self):
+        player_guess = self.rounds[-1]["you_guess"].get()
+        if len(player_guess) < 4:
+            messagebox.showinfo("Error", "There should be 4 digits")
+            return
+        self.rounds[-1]["you_guess"].config(state=DISABLED)
+        if not self.op_guess:
+            self.op_guess = next(self.generator)
+        self.you_bulls, self.you_cows = self.generator.send(player_guess).split()
+        insert_value(self.rounds[-1]["op_guess"], self.op_guess)
+        self.op_bulls.config(state=NORMAL)
+        self.op_cows.config(state=NORMAL)
+        self.game_field["btn_send"].config(command=self.answer)
+        handle_game_key(self.answer, self.op_bulls, self.op_cows)
 
-    guess_counter = 1
-    current_guess = next(generator)
-    widgets = draw_round(guess_counter)
-
-
-def answer(game_field, generator, rounds):
-    b, c = rounds[-1]["op_bulls"], rounds[-1]["op_cows"]
-    if not (b.get() or c.get()):
-        messagebox.showinfo("Error", "Fields cannot be empty")
-        return
-    current_guess = generator.send(f"{b.get()} {c.get()}")
-    if not current_guess:
-        messagebox.showinfo("Error", "Data you sent are not valid")
-        return
-
-    if len(current_guess) > 4:
-        messagebox.showinfo(
-            f"Opponent won in {current_guess[4:]} rounds",
-            f"Your number: {current_guess[:4]}",
+    def guess(self):
+        self.rounds.append(draw_round(len(self.rounds) + 1))
+        self.op_bulls, self.op_cows = (
+            self.rounds[-1]["op_bulls"],
+            self.rounds[-1]["op_cows"],
         )
-        return
-
-    insert_value(rounds[-1]["op_guess"], next(guesser))
-    rounds[-1]["you_guess"].config(state=DISABLED)
-    rounds[-1]["op_cows"].config(state=NORMAL)
-    rounds[-1]["op_bulls"].config(state=NORMAL)
+        self.rounds[-1]["you_guess"].config(state=NORMAL)
+        self.rounds[-1]["you_guess"].focus_set()
+        self.game_field["btn_send"].config(command=self.get_guess_back)
+        handle_game_key(self.get_guess_back, self.rounds[-1]["you_guess"])
 
 
-def guess(game_field, generator, rounds):
-    rounds.append(draw_round(len(rounds)))
-    rounds[-1]["you_guess"].config(state=NORMAL)
-    rounds[-1]["you_guess"].focus_set()
-    insert_value(rounds[-1]["op_guess"], next(generator))
-    rounds[-1]["you_guess"].config(state=DISABLED)
-    rounds[-1]["op_cows"].config(state=NORMAL)
-    rounds[-1]["op_bulls"].config(state=NORMAL)
-    game_field["btn_send"].config(command=lambda: answer(game_field, generator, rounds))
+def handle_game_key(func, *entry_fields):
+    def inner_func(event):
+        if event.char == "\r":
+            func()
+        elif root.focus_get() not in entry_fields:
+            entry_fields[0].focus_set()
+            root.after(1, entry_fields[0].insert, END, event.char)
 
-
-def handle_single_game_key(event, generator, rounds):
-    focus = root.focus_get()
-    print(focus)
-    if not focus:
-        rounds[-1]["you_guess"].focus_set()
-        root.after(1, rounds[-1]["you_guess"].insert, END, event.char)
-    if event.char == "\r":
-        guess(generator, rounds)
-
-
-def single_game():
-    for widget in root.winfo_children():
-        widget.destroy()
-    rounds = []
-    generator = guesser.graphical_main()
-    game_field = draw_game_field()
-    game_field["btn_send"].config(command=lambda: guess(generator, rounds))
-    root.bind(
-        "<Key>",
-        lambda event: handle_single_game_key(event, guesser.graphical_main(), rounds),
-    )
+    root.bind("<Key>", inner_func)
 
 
 def insert_value(entry_form, value):
@@ -117,21 +90,18 @@ def insert_value(entry_form, value):
         entry_form.config(state=DISABLED)
 
 
-class MainGame:
+class MultiplayerGame:
     """
     Класс, который описывает саму игру
     """
 
-    fields = ("you_guess", "you_bulls", "you_cows", "op_guess", "op_bulls", "op_cows")
-
     def __init__(self, interface, game_field):
-        # self.rounds_frame = Frame(root)
-        # self.rounds_frame.grid(row=2, column=0, columnspan=9)
         self.rounds = {0: {}}
         self.interface = interface
         self.game_field = game_field
         self.game_field["btn_send"].config(command=self.send)
-        self.game_field["btn_quit"].config(command=self.quit)
+        self.game_field["btn_main_menu"].config(command=self.main_menu)
+        self.game_field["btn_quit"].config(command=lambda: _quit(self.interface))
         self.start_time = datetime.now()
         self.game_field["lbl_time_started"].config(
             text=self.start_time.strftime("%H:%M:%S")
@@ -173,12 +143,6 @@ class MainGame:
         self.game_field["btn_send"].config(state=DISABLED)
         if self.send_entries[1].get() == "4":
             self.end_game("opponent")
-            # pop_up(
-            #     yes=self.wait_new_game,
-            #     no=self.end_game,
-            #     text="You lost. Do you want a revenge?",
-            #     title="Defeat",
-            # )
         else:
             self.recv()
 
@@ -197,33 +161,6 @@ class MainGame:
                 "There are some problems with connection, or your opponent has left.",
             )
 
-    # тут можно доорганизовать логику новой игры
-    # def wait_new_game(self):
-    #     if not self.thread:
-    #         Label(root, text="Waiting your opponent...").grid(
-    #             row=self.round + 2, column=0, colomnspan=5
-    #         )
-    #         self.game_field["btn_new_game"].config(text="Revenge!", state=DISABLED)
-    #         threading.Thread(target=lambda: self.interface.send_data("y")).start()
-    #         self.thread = threading.Thread(target=self.interface.get_data)
-    #         self.thread.start()
-    #     if self.thread.is_alive():
-    #         root.after(250, self.wait_new_game)
-    #     elif self.interface.data == 'y':
-    #         self.rounds_frame.destroy()
-    #         self.rounds = {0: {form: EntryCap() for form in self.fields}}
-    #
-    #     else:
-    #         messagebox.showinfo('Reject', "Opponent doesn't want to play")
-    #
-    #
-    #
-    # def end_game(self):
-    #     self.game_field["btn_new_game"].config(
-    #         text="Revenge!", state=NORMAL, command=self.wait_new_game
-    #     )
-    #     threading.Thread(target=lambda: self.interface.send_data("n")).start()
-
     def end_game(self, who_win):
         self.game_field["lbl_player_won"].config(text=who_win)
         cur_time = datetime.now()
@@ -238,9 +175,9 @@ class MainGame:
         else:
             messagebox.showinfo("Win", "You won.")
 
-    def quit(self):
+    def main_menu(self):
         self.interface.close()
-        root.quit()
+        draw_main_menu()
 
 
 def multiplayer_new_game(interface):
@@ -252,10 +189,10 @@ def multiplayer_new_game(interface):
         Label(root, text="P").grid(row=11, column=0)
         Label(root, text=interface.port).grid(row=11, column=1)
         messagebox.showinfo("Game started", "Your turn. Guess...")
-        MainGame(interface, game_field).prepare_send()
+        MultiplayerGame(interface, game_field).prepare_send()
     else:
         game_field["btn_send"].config(state=DISABLED)
-        MainGame(interface, game_field).recv()
+        MultiplayerGame(interface, game_field).recv()
 
 
 def check_status(interface, lbl, counter, *active_btns):
@@ -278,8 +215,9 @@ def check_status(interface, lbl, counter, *active_btns):
         multiplayer_new_game(interface)
 
 
-def quit_after_connection(interface):
-    interface.close()
+def _quit(interface=None):
+    if interface:
+        interface.close()
     root.quit()
 
 
@@ -291,7 +229,7 @@ def start_game(*active_btns, btn_quit=None, entry_ip=None):
         interface = multiplayer.Server()
 
     if btn_quit:
-        btn_quit.config(command=lambda: quit_after_connection(interface))
+        btn_quit.config(command=lambda: _quit(interface))
 
     for btn in active_btns:
         btn["state"] = DISABLED
@@ -308,7 +246,7 @@ def start_game(*active_btns, btn_quit=None, entry_ip=None):
     thread_connection.start()
 
 
-def entry_handle(entry, default_text):
+def entry_ip_handle(entry, default_text):
     if entry.get() == default_text:
         entry.delete(0, END)
         entry.config(fg="black")
@@ -333,9 +271,8 @@ def get_val_before_validate(act, ind, new_val, old_val):
 
 
 def validate_ip_address(act, ind, new_val, old_val):
-    # это просто что за жесть?))))
-    # осталась проблема, что при выделении участка и заменой его - происходит хрень)
-    # отсутствие обработки ctrl комманд
+    # при выделении участка и заменой его - ошибки
+    # отсутствие обработки ctrl команд
     val = get_val_before_validate(act, ind, new_val, old_val)
     nums = val.split(".")
     if len(nums) <= 4:
@@ -363,27 +300,14 @@ def join_game(old_frame):
         validate="key",
     )
     entry_ip.config(validatecommand=decor_register(entry_ip, validate_ip_address))
-    entry_ip_default_text = "192.168.0.1"
-    entry_ip.insert(0, entry_ip_default_text)
-    entry_ip.bind(
-        "<FocusIn>", lambda event: entry_handle(entry_ip, entry_ip_default_text)
-    )
-    entry_ip.bind(
-        "<FocusOut>", lambda event: entry_handle(entry_ip, entry_ip_default_text)
-    )
-    active_button = Button(
-        root,
-        text="Connect",
-        command=lambda: start_game(active_button, entry_ip=entry_ip),
-    )
-    root.bind(
-        "<Key>", lambda event: handle_keys_join_game(event, entry_ip, active_button)
-    )
-    btns = [
-        entry_ip,
-        active_button,
-        Button(root, text="Quit", command=root.quit),
-    ]
+    ip_example = "192.168.0.1"
+    entry_ip.insert(0, ip_example)
+    for sequence in ("<FocusIn>", "<FocusOut>"):
+        entry_ip.bind(sequence, lambda event: entry_ip_handle(entry_ip, ip_example))
+    command_connect = lambda: start_game(active_button, entry_ip=entry_ip)
+    active_button = Button(root, text="Connect", command=command_connect)
+    handle_game_key(command_connect, entry_ip)
+    btns = [entry_ip, active_button, Button(root, text="Quit", command=_quit)]
     for btn in btns:
         btn.pack()
 
@@ -404,7 +328,7 @@ def local_game(old_frame):
     btns = [
         create_button_btn,
         join_btn,
-        Button(frame_local_game, text="Quit", command=root.quit),
+        Button(frame_local_game, text="Quit", command=_quit),
     ]
     for btn in [frame_local_game, *btns]:
         btn.pack()
@@ -418,13 +342,13 @@ def draw_main_menu():
     ).pack()
     frame_main_menu = Frame(root)
     btns = [
-        Button(frame_main_menu, text="Single game", command=single_game),
+        Button(frame_main_menu, text="Single game", command=SingleGame),
         Button(
             frame_main_menu,
             text="Local game",
             command=lambda: local_game(frame_main_menu),
         ),
-        Button(frame_main_menu, text="Quit", command=root.quit),
+        Button(frame_main_menu, text="Quit", command=_quit),
     ]
     for btn in [frame_main_menu, *btns]:
         btn.pack()
@@ -490,15 +414,17 @@ def draw_game_field():
         state=DISABLED,
     )
     game_field["btn_new_game"].grid(row=9, column=11, columnspan=2)
-    Button(
+    game_field["btn_main_menu"] = Button(
         root,
         text="Main menu",
         command=lambda: pop_up(
             yes=draw_main_menu, text="Are you sure, that you want to leave the game?"
         ),
-    ).grid(row=10, column=11, columnspan=2)
-    game_field["btn_quit"] = Button(root, text="Quit", command=root.quit)
+    )
+    game_field["btn_main_menu"].grid(row=10, column=11, columnspan=2)
+    game_field["btn_quit"] = Button(root, text="Quit", command=_quit)
     game_field["btn_quit"].grid(row=11, column=11, columnspan=2)
+
     return game_field
 
 
@@ -510,8 +436,8 @@ def validate_guess(act, ind, new_val, old_val):
 
 
 def validate_digit(act, ind, new_val, old_val):
-    if not old_val:
-        return new_val.is_digit()
+    if not old_val or act == "0":
+        return new_val in set("01234")
     return False
 
 
@@ -549,7 +475,6 @@ def main():
     root.geometry("530x360")
 
     draw_main_menu()
-
     root.mainloop()
 
 

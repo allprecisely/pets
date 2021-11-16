@@ -9,7 +9,7 @@ from tkinter import *
 from tkinter import messagebox
 
 import guesser
-import multiplayer
+import client
 import utils
 
 root = Tk()
@@ -50,7 +50,7 @@ class SingleGame:
         self.op_cows.config(state=DISABLED)
         insert_value(root.children[f"you_bulls_{self.round}"], self.you_bulls_val)
         insert_value(root.children[f"you_cows_{self.round}"], self.you_cows_val)
-        if self.op_bulls.get() == '4':
+        if self.op_bulls.get() == "4":
             if self.you_bulls_val == "4":
                 self.end_game("draw")
                 return
@@ -111,62 +111,98 @@ class SingleGame:
 
 
 class MultiplayerGame:
-    """
-    Класс, который описывает саму игру
-    """
-
     def __init__(self):
-        frame = root.nametowidget(".frame_local_game")
-        entry_ip = frame.children.get("entry_ip")
-        if entry_ip:
-            ip = entry_ip.get()
-            self.interface = multiplayer.Client(ip)
-        else:
-            self.interface = multiplayer.Server()
+        self.client = None
 
-        frame.children["btn_quit"].config(command=lambda: _quit(self.interface))
-        frame.children["btn_main_menu"].config(
-            command=lambda: draw_main_menu(self.interface)
-        )
-        frame.children["btn_create_game"].config(state=DISABLED)
-        btn_join_game = frame.children.get("btn_join_game")
-        if btn_join_game:
-            btn_join_game.config(state=DISABLED)
-        Label(
-            frame, text=self.interface.connect_text, pady=5, name="lbl_connecting"
-        ).pack()
-
-        threading.Thread(target=self.interface.connect, daemon=True).start()
+        self.connect_to_server()
 
         self.start_time = None
-        self.round = 1
-        # for change data btwn functions
-        self.op_guess_val = self.you_bulls_val = self.you_cows_val = None
-        # for convenience
-        self.you_guess = self.op_bulls = self.op_cows = None
+        # self.round = 1
+        # # for change data btwn functions
+        # self.op_guess_val = self.you_bulls_val = self.you_cows_val = None
+        # # for convenience
+        # self.you_guess = self.op_bulls = self.op_cows = None
+        #
+        # self.polling_started = False
+        # self.data = None
+        #
+        # self.start_connection()
 
-        self.polling_started = False
-        self.data = None
-
-        self.start_connection()
-
-    def start_connection(self, counter=20000):
-        if self.interface.closed:
+    def connect_to_server(self):
+        frame = root.nametowidget(".frame_local_game")
+        name = frame.nametowidget('frame_name').children["entry_name"].get()
+        if not name:
+            messagebox.showinfo("Error", "Type name.")
             return
-        if not counter or getattr(self.interface, "try_another_server", False):
-            frame = root.nametowidget(".frame_local_game")
-            frame.children["lbl_connecting"].destroy()
-            frame.children["btn_create_game"].config(state=NORMAL)
-            btn_join_game = frame.children.get("btn_join_game")
-            if btn_join_game:
-                btn_join_game.config(state=NORMAL)
-            threading.Thread(target=self.interface.close).start()
-            messagebox.showinfo("Error", self.interface.error_text)
-        elif not self.interface.connected:
-            root.after(250, self.start_connection, counter - 250)
+        lbl_connecting = Label(
+            root.nametowidget(".frame_local_game"), pady=5, name="lbl_connecting"
+        )
+        entry_room_id = frame.children.get('frame_room')
+        room_id = None
+        if entry_room_id:
+            room_id = entry_room_id.children["room_id"].get()
+            if not room_id:
+                messagebox.showinfo("Error", "Type room id.")
+                return
+            lbl_connecting.config(text="Connecting...")
         else:
-            self.start_new_game()
+            lbl_connecting.config(text="Creating room...")
+        lbl_connecting.pack()
+        self.button_state_change()
+        self.client = self.client or client.BCClient(self.handle_responses)
 
+        if not self.client.sock:
+            lbl_connecting.destroy()
+            self.button_state_change()
+            self.client = None
+            messagebox.showinfo("Error", "Problems with connection")
+            return
+        self.client.connect_to_room(room_id)
+
+    def handle_responses(self, data):
+        action = data["action"]
+        value = data["value"]
+        if action == "connect_to_room":
+            if value[0] == 0:
+                messagebox.showinfo("Error", value[1])
+                self.button_state_change()
+            elif value[0] == 1:
+                root.nametowidget(".frame_local_game.lbl_connecting").config(
+                    text=f"Waiting for connection... Room: {value[1]}",
+                )
+            elif value[0] == 2:
+                self.start_new_game()
+
+    def button_state_change(self):
+        frame = root.nametowidget(".frame_local_game")
+        frame.children["btn_quit"].config(command=lambda: _quit(self.client))
+        frame.children["btn_main_menu"].config(
+            command=lambda: draw_main_menu(self.client)
+        )
+        for widget_name in ("btn_create_game", "btn_join_game", "room_id"):
+            btn = frame.children.get(widget_name)
+            print(widget_name, btn)
+            if btn:
+                btn.config(state=DISABLED if btn["state"] == ACTIVE else ACTIVE)
+                print(btn['state'])
+
+    # def start_connection(self, counter=20000):
+    #     if self.interface.closed:
+    #         return
+    #     if not counter or getattr(self.interface, "try_another_server", False):
+    #         frame = root.nametowidget(".frame_local_game")
+    #         frame.children["lbl_connecting"].destroy()
+    #         frame.children["btn_create_game"].config(state=NORMAL)
+    #         btn_join_game = frame.children.get("btn_join_game")
+    #         if btn_join_game:
+    #             btn_join_game.config(state=NORMAL)
+    #         threading.Thread(target=self.interface.close).start()
+    #         messagebox.showinfo("Error", self.interface.error_text)
+    #     elif not self.interface.connected:
+    #         root.after(250, self.start_connection, counter - 250)
+    #     else:
+    #         self.start_new_game()
+    #
     def start_new_game(self):
         for widget in root.winfo_children():
             widget.destroy()
@@ -176,109 +212,116 @@ class MultiplayerGame:
             text=self.start_time.strftime("%H:%M:%S")
         )
         Label(root, text="H").grid(row=11, column=0)
-        Label(root, text=f'{self.interface.ip_address}:{self.interface.port}').grid(row=11, column=1, columnspan=4)
+        # Label(root, text=f"{self.interface.ip_address}:{self.interface.port}").grid(
+        #     row=11, column=1, columnspan=4
+        # )
 
-        self.start_guess()
+        # self.start_guess()
 
-    def set_answers(self):
-        validate = lambda answer: True  # Сделать валидацию
-        bulls, cows = self.op_bulls.get(), self.op_cows.get()
-        if not (bulls and cows):
-            messagebox.showinfo("Error", "Fields cannot be empty")
-            return
-        self.data = f"{bulls} {cows}"
-        if not validate(self.data):
-            messagebox.showinfo("Error", "Data you sent are not valid")
-            return
-        self.op_bulls.config(state=DISABLED)
-        self.op_cows.config(state=DISABLED)
-        self.polling(self.start_guess)
-
-    def start_answer(self):
-        insert_value(root.children[f"op_guess_{self.round}"], self.interface.data)
-        self.op_bulls.config(state=NORMAL)
-        self.op_cows.config(state=NORMAL)
-        root.children["btn_send"].config(command=self.set_answers)
-        handle_game_key(self.set_answers, self.op_bulls, self.op_cows)
-
-    def set_guesses(self):
-        self.data = self.you_guess.get()
-        if len(self.data) < 4:
-            messagebox.showinfo("Error", "There should be 4 digits")
-            return
-        self.you_guess.config(state=DISABLED)
-        self.polling(self.start_answer)
-
-    def start_guess(self):
-        if self.interface.data:
-            bulls, cows = self.interface.data.split()
-            insert_value(root.children[f"you_bulls_{self.round}"], bulls)
-            insert_value(root.children[f"you_cows_{self.round}"], cows)
-            if self.op_bulls.get() == '4':
-                if bulls == "4":
-                    self.end_game("draw")
-                    return
-                self.end_game("opponent")
-                return
-            elif bulls == "4":
-                self.end_game("you")
-                return
-            self.round += 1
-        draw_round(self.round)
-        self.you_guess = root.children[f"you_guess_{self.round}"]
-        self.op_bulls = root.children[f"op_bulls_{self.round}"]
-        self.op_cows = root.children[f"op_cows_{self.round}"]
-        self.you_guess.config(state=NORMAL)
-        self.you_guess.focus_set()
-        root.children["btn_send"].config(command=self.set_guesses)
-        handle_game_key(self.set_guesses, self.you_guess)
-
-    def polling(self, next_function):
-        if not self.polling_started:
-            root.children["btn_send"].config(state=DISABLED)
-            if isinstance(self.interface, multiplayer.Client):
-                threading.Thread(target=self.interface.send_data, args=(self.data,)).start()
-                threading.Thread(target=self.interface.get_data).start()
-            else:
-                threading.Thread(target=self.interface.get_data).start()
-                threading.Thread(target=self.interface.send_data, args=(self.data,)).start()
-            self.polling_started = True
-            self.polling(next_function)
-        elif not self.interface.connected:
-            messagebox.showinfo(
-                "Lost connection",
-                "There are some problems with connection, or your opponent has left.",
-            )
-            self.end_game('nobody')
-        elif not (self.interface.sent and self.interface.received):
-            root.after(1000, self.polling, next_function)
-        else:
-            root.children["btn_send"].config(state=NORMAL)
-            self.polling_started = False
-            next_function()
-
-    def end_game(self, who_win):
-        for entry in (self.you_guess, self.op_bulls, self.op_cows):
-            if entry:
-                entry.config(state=DISABLED)
-        root.children["btn_send"].config(state=DISABLED)
-        if who_win =='nobody':
-            messagebox.showinfo('Attention', 'You opponent has left')
-            return
-        root.children["lbl_player_won"].config(text=who_win)
-        cur_time = datetime.now()
-        root.children["lbl_time_ended"].config(text=cur_time.strftime("%H:%M:%S"))
-
-        duration = time.strftime(
-            "%Mm%Ss", time.gmtime((cur_time - self.start_time).total_seconds())
-        )
-        root.children["lbl_duration"].config(text=duration)
-        if who_win == "opponent":
-            messagebox.showinfo("Defeat", "You lost.")
-        elif who_win == "you":
-            messagebox.showinfo("Win", "You won.")
-        else:
-            messagebox.showinfo("Draw", "Draw :)")
+    #
+    # def set_answers(self):
+    #     validate = lambda answer: True  # Сделать валидацию
+    #     bulls, cows = self.op_bulls.get(), self.op_cows.get()
+    #     if not (bulls and cows):
+    #         messagebox.showinfo("Error", "Fields cannot be empty")
+    #         return
+    #     self.data = f"{bulls} {cows}"
+    #     if not validate(self.data):
+    #         messagebox.showinfo("Error", "Data you sent are not valid")
+    #         return
+    #     self.op_bulls.config(state=DISABLED)
+    #     self.op_cows.config(state=DISABLED)
+    #     self.polling(self.start_guess)
+    #
+    # def start_answer(self):
+    #     insert_value(root.children[f"op_guess_{self.round}"], self.interface.data)
+    #     self.op_bulls.config(state=NORMAL)
+    #     self.op_cows.config(state=NORMAL)
+    #     root.children["btn_send"].config(command=self.set_answers)
+    #     handle_game_key(self.set_answers, self.op_bulls, self.op_cows)
+    #
+    # def set_guesses(self):
+    #     self.data = self.you_guess.get()
+    #     if len(self.data) < 4:
+    #         messagebox.showinfo("Error", "There should be 4 digits")
+    #         return
+    #     self.you_guess.config(state=DISABLED)
+    #     self.polling(self.start_answer)
+    #
+    # def start_guess(self):
+    #     if self.interface.data:
+    #         bulls, cows = self.interface.data.split()
+    #         insert_value(root.children[f"you_bulls_{self.round}"], bulls)
+    #         insert_value(root.children[f"you_cows_{self.round}"], cows)
+    #         if self.op_bulls.get() == "4":
+    #             if bulls == "4":
+    #                 self.end_game("draw")
+    #                 return
+    #             self.end_game("opponent")
+    #             return
+    #         elif bulls == "4":
+    #             self.end_game("you")
+    #             return
+    #         self.round += 1
+    #     draw_round(self.round)
+    #     self.you_guess = root.children[f"you_guess_{self.round}"]
+    #     self.op_bulls = root.children[f"op_bulls_{self.round}"]
+    #     self.op_cows = root.children[f"op_cows_{self.round}"]
+    #     self.you_guess.config(state=NORMAL)
+    #     self.you_guess.focus_set()
+    #     root.children["btn_send"].config(command=self.set_guesses)
+    #     handle_game_key(self.set_guesses, self.you_guess)
+    #
+    # def polling(self, next_function):
+    #     if not self.polling_started:
+    #         root.children["btn_send"].config(state=DISABLED)
+    #         if isinstance(self.interface, multiplayer.Client):
+    #             threading.Thread(
+    #                 target=self.interface.send_data, args=(self.data,)
+    #             ).start()
+    #             threading.Thread(target=self.interface.get_data).start()
+    #         else:
+    #             threading.Thread(target=self.interface.get_data).start()
+    #             threading.Thread(
+    #                 target=self.interface.send_data, args=(self.data,)
+    #             ).start()
+    #         self.polling_started = True
+    #         self.polling(next_function)
+    #     elif not self.interface.connected:
+    #         messagebox.showinfo(
+    #             "Lost connection",
+    #             "There are some problems with connection, or your opponent has left.",
+    #         )
+    #         self.end_game("nobody")
+    #     elif not (self.interface.sent and self.interface.received):
+    #         root.after(1000, self.polling, next_function)
+    #     else:
+    #         root.children["btn_send"].config(state=NORMAL)
+    #         self.polling_started = False
+    #         next_function()
+    #
+    # def end_game(self, who_win):
+    #     for entry in (self.you_guess, self.op_bulls, self.op_cows):
+    #         if entry:
+    #             entry.config(state=DISABLED)
+    #     root.children["btn_send"].config(state=DISABLED)
+    #     if who_win == "nobody":
+    #         messagebox.showinfo("Attention", "You opponent has left")
+    #         return
+    #     root.children["lbl_player_won"].config(text=who_win)
+    #     cur_time = datetime.now()
+    #     root.children["lbl_time_ended"].config(text=cur_time.strftime("%H:%M:%S"))
+    #
+    #     duration = time.strftime(
+    #         "%Mm%Ss", time.gmtime((cur_time - self.start_time).total_seconds())
+    #     )
+    #     root.children["lbl_duration"].config(text=duration)
+    #     if who_win == "opponent":
+    #         messagebox.showinfo("Defeat", "You lost.")
+    #     elif who_win == "you":
+    #         messagebox.showinfo("Win", "You won.")
+    #     else:
+    #         messagebox.showinfo("Draw", "Draw :)")
 
 
 def draw_join_game():
@@ -312,20 +355,27 @@ def draw_join_game():
     btn_connect.config(text="Connect")
     frame.nametowidget("btn_join_game").destroy()
 
-    entry_ip = Entry(frame, fg="grey", validate="key", name="entry_ip")
-    entry_ip.config(validatecommand=decor_register(entry_ip, validate_ip_address))
-    ip_example = "192.168.0.1"
-    entry_ip.insert(0, ip_example)
+    entry_room = Entry(frame, fg="grey", validate="key", name="entry_name", width=5)
+    entry_room.config(validatecommand=decor_register(entry_room, validate_ip_address))
+    room_example = "6666"
+    entry_room.insert(0, room_example)
     for sequence in ("<FocusIn>", "<FocusOut>"):
-        entry_ip.bind(sequence, lambda event: entry_ip_handle(entry_ip, ip_example))
-    handle_game_key(MultiplayerGame, entry_ip)
-    entry_ip.pack(before=btn_connect)
+        entry_room.bind(sequence, lambda event: entry_ip_handle(entry_room, room_example))
+    handle_game_key(MultiplayerGame, entry_room)
+    frame_name = Frame(frame, name="frame_room")
+    Label(frame_name, text="Room id", pady=5, padx=5).pack(side=LEFT)
+    Entry(frame_name, name="entry_name", width=5).pack(side=RIGHT)
+    frame_name.pack(before=btn_connect)
 
 
 def draw_local_game(old_frame):
     old_frame.destroy()
     frame = Frame(root, name="frame_local_game")
     frame.pack()
+    frame_name = Frame(frame, name="frame_name")
+    frame_name.pack()
+    Label(frame_name, text="Name", pady=5, padx=5).pack(side=LEFT)
+    Entry(frame_name, name="entry_name", width=10).pack(side=RIGHT)
     Button(
         frame,
         text="Create game",

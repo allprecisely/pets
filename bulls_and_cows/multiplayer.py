@@ -9,6 +9,7 @@ logger = logging.getLogger(__name__)
 PORT = int(os.getenv("MULTIPLAYER_PORT", 8765))
 HOST = os.getenv("MULTIPLAYER_HOST", "")
 
+
 def get_socket():
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
         sock.connect(("8.8.8.8", 80))

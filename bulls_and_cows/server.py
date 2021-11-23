@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime
 import pickle
 import socket
 
@@ -47,61 +48,121 @@ class Server:
             writer.write(pickle.dumps(data))
             await writer.drain()
         except BrokenPipeError:
-            print('Could not send message. Retry later...')
+            print("Could not send message. Retry later...")
 
     async def handle_data(self, _id, data):
-        return "answer"
+        if not isinstance(data, dict):
+            print(f"Client sent {data}, returning upper str")
+            return data.upper()
 
 
 class BCServer(Server):
     def __init__(self):
         """
-        Ответы:
-        0: ошибка
-        1: ответ нужен, все в порядке
-        2: ответ не нужен, все ок
         БД
-        users: {name: con_id}
-        rooms: {n: {name1: connected?, name2: connected?}}
+        users: {con_id: room_n}
+        rooms: {
+            room_n: {
+                players: {name1: con_id1, name2: con_id2},
+                # TODO: усложнить, чтобы можно было восстановить игру для игрока
+                # field: {
+                #     name1: [[guess1, bulls1, cows1], [guess2...]],
+                #     name2: [...],
+                # },
+                field: {p1: [g1, b1, c], p2:...},
+                created_at: timestamp,
+            }
+        }
         """
-        self.bd = {"users": {}, "rooms": {}}
+        self.bd = {
+            "users": {},
+            "rooms": {},
+        }
         super().__init__()
 
     async def handle_data(self, con_id, data):
         if not data:
-            for key, value in self.bd["users"].items():
-                if value == con_id:
-                    del self.bd["users"][key]
-                    return
+            if con_id not in self.bd["users"]:
+                return
+            del self.bd["users"][con_id]
+            for room_id, room in self.bd["rooms"].items():
+                if con_id not in room['players'].values():
+                    if len(room['players']) == 1:
+                        del self.bd["rooms"][room_id]
+                    else:
+                        room['players'][con_id] = ''
+                    break
+            return
         action = data["action"]
         value = data["value"]
         if action == "connect_to_room":
+            """
+            Ответы:
+            0: ошибка
+            1: ответ для создателя комнаты с номером комнаты
+            2: ответ с именами
+            """
             return {
                 "action": "connect_to_room",
                 "value": await self.connect_to_room(con_id, value),
             }
+        elif action == "send_guess":
+            return {
+                "action": "send_guess",
+                "value": await self.send_guess(con_id, value),
+            }
 
     async def connect_to_room(self, con_id, config):
-        last_con_id = self.bd["users"].get(config["name"])
-        if last_con_id and last_con_id != con_id:
-            return 0, "User with such name already exists. Choose other."
-        self.bd["users"][config["name"]] = con_id
-        if not config["room_id"]:
-            last_room = str(len(self.bd["rooms"]))
-            room = "0" * max(4 - len(last_room), 0) + last_room
-            self.bd["rooms"][room] = {config["name"]: True}
+        name, room_id = config["name"], config["room_id"]
+        if not room_id:
+            last_room = max(map(int, self.bd["rooms"] or [0]))
+            room = "0" * (4 - len(str(last_room))) + str(last_room + 1)
+            self.bd["rooms"][room] = {
+                "players": {name: con_id},
+                "created_at": datetime.now(),
+                "field": {},
+            }
+            self.bd["users"][con_id] = self.bd["rooms"][room]
             return 1, room
-        room = self.bd["rooms"].get(config["room_id"])
+        room = self.bd["rooms"].get(room_id)
         if not room:
             return 0, "No room with such id"
-        if len(room) < 2 or not room.get(config["name"], True):
-            for user, connected in room.items():
-                if user != config["name"] and connected:
-                    await self.send_data(self.bd["users"][user], (2, "OK"))
-            room[config["name"]] = True
-            return 2, "OK"
-        return 0, "The room is occupied by other players"
+        if len(room['players']) == 1 and room['players'].get(name):
+            return 0, "Player with such name is already in the room"
+        elif len(room['players']) == 2:
+            return 0, "The room is occupied by other players"
 
+        opponent_name = ""
+        for bd_name, bd_con_id in room['players'].items():
+            if name != bd_name and bd_con_id:
+                await self.send_data(
+                    bd_con_id,
+                    {
+                        "action": "connect_to_room",
+                        "value": (2, name),
+                    },
+                )
+                opponent_name = self.bd["users"][bd_con_id]
+        room['players'][name] = con_id
+        self.bd["users"][con_id] = room
+        return 2, opponent_name
+
+    async def send_guess(self, con_id, value):
+        room = self.bd["users"][con_id]
+        response = None
+        for bd_name, bd_con_id in room['players'].items():
+            if con_id == bd_con_id:
+                room['field'][bd_name]['guess'] = value
+            elif room['field'][bd_name]['guess']:
+                await self.send_data(
+                    bd_con_id,
+                    {
+                        "action": "send_guess",
+                        "value": value,
+                    },
+                )
+                response = room['field'][bd_name]['guess']
+        return response
 
 if __name__ == "__main__":
     BCServer()

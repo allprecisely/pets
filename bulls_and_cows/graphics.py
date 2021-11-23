@@ -1,7 +1,3 @@
-"""
-новая партия
-валидация полей
-"""
 from datetime import datetime
 import time
 import threading
@@ -113,96 +109,108 @@ class SingleGame:
 class MultiplayerGame:
     def __init__(self):
         self.client = None
+        self.is_polling = False
+        self.current_state = self.connect_to_room
+        self.name = ""
+        self.opponent_name = ""
+        self.room_id = ""
 
+        btn = root.nametowidget(".frame_local_game.btn_create_game")
+        btn.config(command=self.connect_to_server)
         self.connect_to_server()
 
         self.start_time = None
-        # self.round = 1
-        # # for change data btwn functions
-        # self.op_guess_val = self.you_bulls_val = self.you_cows_val = None
-        # # for convenience
-        # self.you_guess = self.op_bulls = self.op_cows = None
-        #
-        # self.polling_started = False
-        # self.data = None
-        #
-        # self.start_connection()
+        self.round = 1
+        # for change data btwn functions
+        self.op_guess_val = self.you_bulls_val = self.you_cows_val = None
+        # for convenience
+        self.you_guess = self.op_bulls = self.op_cows = None
+
+        self.data = None
 
     def connect_to_server(self):
+        if not self.is_polling:
+            if not self.name:
+                self.handle_widgets_menu()
+                if not self.name:
+                    return
+            else:
+                self.widget_state_change(DISABLED)
+            self.client = self.client or client.BCClient(self.handle_responses)
+            frame = root.children.get("frame_local_game", root)
+            # btn_create_game = frame.children.get("btn_create_game")
+            # if btn_create_game:
+            #     btn_create_game.config(command=self.connect_to_room)
+            frame.children["btn_quit"].config(command=lambda: _quit(self.client))
+            frame.children["btn_main_menu"].config(
+                command=lambda: draw_main_menu(self.client)
+            )
+            threading.Thread(target=self.client.connect).start()
+            self.is_polling = True
+        if self.client.server_connected:
+            self.is_polling = False
+            self.current_state()
+        elif self.client.server_connected is None:
+            root.after(250, self.connect_to_server)
+        else:
+            self.is_polling = False
+            self.widget_state_change(NORMAL)
+
+    def handle_widgets_menu(self):
         frame = root.nametowidget(".frame_local_game")
-        name = frame.nametowidget('frame_name').children["entry_name"].get()
-        if not name:
+        self.name = frame.nametowidget("frame_name").children["entry_name"].get()
+        if not self.name:
             messagebox.showinfo("Error", "Type name.")
             return
-        lbl_connecting = Label(
-            root.nametowidget(".frame_local_game"), pady=5, name="lbl_connecting"
-        )
-        entry_room_id = frame.children.get('frame_room')
-        room_id = None
+        entry_room_id = frame.children.get("frame_room")
+        self.room_id = None
         if entry_room_id:
-            room_id = entry_room_id.children["room_id"].get()
-            if not room_id:
+            self.room_id = entry_room_id.children["room_id"].get()
+            if not self.room_id:
                 messagebox.showinfo("Error", "Type room id.")
                 return
-            lbl_connecting.config(text="Connecting...")
-        else:
-            lbl_connecting.config(text="Creating room...")
-        lbl_connecting.pack()
-        self.button_state_change()
-        self.client = self.client or client.BCClient(self.handle_responses)
+        self.widget_state_change(DISABLED)
 
-        if not self.client.sock:
-            lbl_connecting.destroy()
-            self.button_state_change()
-            self.client = None
-            messagebox.showinfo("Error", "Problems with connection")
-            return
-        self.client.connect_to_room(room_id)
+    def connect_to_room(self):
+        if not self.name:
+            self.handle_widgets_menu()
+        self.client.connect_to_room(self.name, self.room_id)
 
     def handle_responses(self, data):
+        if not data:
+            messagebox.showinfo("Error", "Problems with server. Reconnecting...")
+            self.is_polling = False
+            root.after(250, self.connect_to_server)
+            return
         action = data["action"]
         value = data["value"]
         if action == "connect_to_room":
             if value[0] == 0:
+                self.widget_state_change(NORMAL)
                 messagebox.showinfo("Error", value[1])
-                self.button_state_change()
+                self.name = self.room_id = ""
             elif value[0] == 1:
+                self.room_id = value[1]
                 root.nametowidget(".frame_local_game.lbl_connecting").config(
-                    text=f"Waiting for connection... Room: {value[1]}",
+                    text=f"Waiting for connection... Room: {self.room_id}",
                 )
             elif value[0] == 2:
+                self.opponent_name = value[1]
+                print("Ready to start the game")
                 self.start_new_game()
 
-    def button_state_change(self):
+    @staticmethod
+    def widget_state_change(state):
         frame = root.nametowidget(".frame_local_game")
-        frame.children["btn_quit"].config(command=lambda: _quit(self.client))
-        frame.children["btn_main_menu"].config(
-            command=lambda: draw_main_menu(self.client)
-        )
-        for widget_name in ("btn_create_game", "btn_join_game", "room_id"):
-            btn = frame.children.get(widget_name)
-            print(widget_name, btn)
-            if btn:
-                btn.config(state=DISABLED if btn["state"] == ACTIVE else ACTIVE)
-                print(btn['state'])
+        if state == NORMAL:
+            frame.children["lbl_connecting"].destroy()
+        else:
+            Label(frame, text="Connecting...", pady=5, name="lbl_connecting").pack()
+        for widget_name in ("btn_create_game", "btn_join_game"):
+            widget = frame.children.get(widget_name)
+            if widget:
+                widget.config(state=state)
 
-    # def start_connection(self, counter=20000):
-    #     if self.interface.closed:
-    #         return
-    #     if not counter or getattr(self.interface, "try_another_server", False):
-    #         frame = root.nametowidget(".frame_local_game")
-    #         frame.children["lbl_connecting"].destroy()
-    #         frame.children["btn_create_game"].config(state=NORMAL)
-    #         btn_join_game = frame.children.get("btn_join_game")
-    #         if btn_join_game:
-    #             btn_join_game.config(state=NORMAL)
-    #         threading.Thread(target=self.interface.close).start()
-    #         messagebox.showinfo("Error", self.interface.error_text)
-    #     elif not self.interface.connected:
-    #         root.after(250, self.start_connection, counter - 250)
-    #     else:
-    #         self.start_new_game()
-    #
     def start_new_game(self):
         for widget in root.winfo_children():
             widget.destroy()
@@ -211,24 +219,38 @@ class MultiplayerGame:
         root.children["lbl_time_started"].config(
             text=self.start_time.strftime("%H:%M:%S")
         )
-        Label(root, text="H").grid(row=11, column=0)
-        # Label(root, text=f"{self.interface.ip_address}:{self.interface.port}").grid(
-        #     row=11, column=1, columnspan=4
-        # )
+        root.children["lbl_versus"].config(text=f"{self.name} vs. {self.opponent_name}")
+        Label(root, text="room").grid(row=12, column=0, columnspan=2)
+        Label(root, text=self.room_id).grid(row=12, column=2)
 
-        # self.start_guess()
-
+    #     self.start_guess()
     #
+    # def start_guess(self):
+    #     draw_round(self.round)
+    #     self.you_guess = root.children[f"you_guess_{self.round}"]
+    #     self.op_bulls = root.children[f"op_bulls_{self.round}"]
+    #     self.op_cows = root.children[f"op_cows_{self.round}"]
+    #     self.you_guess.config(state=NORMAL)
+    #     self.you_guess.focus_set()
+    #     root.children["btn_send"].config(command=self.set_guesses)
+    #     handle_game_key(self.set_guesses, self.you_guess)
+    #
+    # def set_guesses(self):
+    #     self.data = self.you_guess.get()
+    #     if len(self.data) < 4:
+    #         messagebox.showinfo("Error", "There should be 4 digits")
+    #         return
+    #     self.you_guess.config(state=DISABLED)
+    #     self.send_guess()
+    #     self.polling(self.start_answer)
+
     # def set_answers(self):
-    #     validate = lambda answer: True  # Сделать валидацию
     #     bulls, cows = self.op_bulls.get(), self.op_cows.get()
     #     if not (bulls and cows):
     #         messagebox.showinfo("Error", "Fields cannot be empty")
     #         return
     #     self.data = f"{bulls} {cows}"
-    #     if not validate(self.data):
-    #         messagebox.showinfo("Error", "Data you sent are not valid")
-    #         return
+    #     # TODO: Сделать валидацию data через guessing
     #     self.op_bulls.config(state=DISABLED)
     #     self.op_cows.config(state=DISABLED)
     #     self.polling(self.start_guess)
@@ -360,11 +382,13 @@ def draw_join_game():
     room_example = "6666"
     entry_room.insert(0, room_example)
     for sequence in ("<FocusIn>", "<FocusOut>"):
-        entry_room.bind(sequence, lambda event: entry_ip_handle(entry_room, room_example))
+        entry_room.bind(
+            sequence, lambda event: entry_ip_handle(entry_room, room_example)
+        )
     handle_game_key(MultiplayerGame, entry_room)
     frame_name = Frame(frame, name="frame_room")
     Label(frame_name, text="Room id", pady=5, padx=5).pack(side=LEFT)
-    Entry(frame_name, name="entry_name", width=5).pack(side=RIGHT)
+    Entry(frame_name, name="room_id", width=5).pack(side=RIGHT)
     frame_name.pack(before=btn_connect)
 
 
@@ -396,6 +420,7 @@ def draw_main_menu(interface=None):
         root, text="BULLS & COWS", font=("Arial", 30), height=3, anchor="s", pady=20
     ).pack()
     frame_main_menu = Frame(root)
+    # TODO: окошечко со статистикой
     btns = [
         Button(frame_main_menu, text="Single game", command=SingleGame),
         Button(
@@ -444,20 +469,24 @@ def draw_game_field():
     )
 
     Label(root, text="STATISTICS", pady=5).grid(row=2, column=11, columnspan=2)
-    Label(root, text="Time started   ", pady=5).grid(row=3, column=11, stick="w")
-    Label(root, text="?", pady=5, name="lbl_time_started").grid(row=3, column=12)
-    Label(root, text="Time ended", pady=5).grid(row=4, column=11, stick="w")
-    Label(root, text="?", pady=5, name="lbl_time_ended").grid(row=4, column=12)
-    Label(root, text="Duration", pady=5).grid(row=5, column=11, stick="w")
-    Label(root, text="?", pady=5, name="lbl_duration").grid(row=5, column=12)
+    Label(root, text="you vs. comp", pady=5, name="lbl_versus").grid(
+        row=3, column=12, columnspan=2
+    )
+    Label(root, text="Time started   ", pady=5).grid(row=4, column=11, stick="w")
+    Label(root, text="?", pady=5, name="lbl_time_started").grid(row=4, column=12)
+    Label(root, text="Time ended", pady=5).grid(row=5, column=11, stick="w")
+    Label(root, text="?", pady=5, name="lbl_time_ended").grid(row=5, column=12)
+    Label(root, text="Duration", pady=5).grid(row=6, column=11, stick="w")
+    Label(root, text="?", pady=5, name="lbl_duration").grid(row=6, column=12)
 
-    Label(root, text=" ", pady=5).grid(row=6, column=11)
+    Label(root, text=" ", pady=5).grid(row=7, column=11)
 
-    Label(root, text="Player won", pady=5).grid(row=7, column=11, stick="w")
-    Label(root, text="?", pady=5, name="lbl_player_won").grid(row=7, column=12)
+    Label(root, text="Player won", pady=5).grid(row=8, column=11, stick="w")
+    Label(root, text="?", pady=5, name="lbl_player_won").grid(row=8, column=12)
 
-    Label(root, text=" ", pady=5).grid(row=8, column=11)
+    Label(root, text=" ", pady=5).grid(row=9, column=11)
 
+    # TODO: кнопочка с новой игрой
     Button(
         root,
         text="Main menu",
@@ -465,9 +494,9 @@ def draw_game_field():
             yes=draw_main_menu, text="Are you sure, that you want to leave the game?"
         ),
         name="btn_main_menu",
-    ).grid(row=10, column=11, columnspan=2)
+    ).grid(row=11, column=11, columnspan=2)
     Button(root, text="Quit", command=_quit, name="btn_quit").grid(
-        row=11, column=11, columnspan=2
+        row=12, column=11, columnspan=2
     )
 
 
@@ -485,6 +514,7 @@ def draw_round(n, frame=root):
 
     Label(frame, text=str(n), pady=5).grid(row=n + 1, column=0)
     Label(frame, text=str(n), pady=5).grid(row=n + 1, column=6)
+    # TODO: если раундов слишком много, добавить скролл
     entries = {
         1: Entry(frame, width=5, name=f"you_guess_{n}"),
         2: Entry(frame, width=2, name=f"you_bulls_{n}"),

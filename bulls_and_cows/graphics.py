@@ -110,13 +110,25 @@ class MultiplayerGame:
     def __init__(self):
         self.client = None
         self.is_polling = False
-        self.current_state = self.connect_to_room
+        self.active_widgets = []
         self.name = ""
         self.opponent_name = ""
         self.room_id = ""
 
-        btn = root.nametowidget(".frame_local_game.btn_create_game")
-        btn.config(command=self.connect_to_server)
+        frame = root.nametowidget(".frame_local_game")
+        frame.nametowidget('btn_create_game').config(command=self.connect_to_server)
+        frame.children["btn_quit"].config(
+            command=lambda: pop_up(
+                yes=lambda: _quit(self.client),
+                text="Are you sure, that you want to quit?",
+            )
+        )
+        frame.children["btn_main_menu"].config(
+            command=lambda: pop_up(
+                yes=lambda: draw_main_menu(self.client),
+                text="Are you sure, that you want to leave the game?",
+            )
+        )
         self.connect_to_server()
 
         self.start_time = None
@@ -126,35 +138,31 @@ class MultiplayerGame:
         # for convenience
         self.you_guess = self.op_bulls = self.op_cows = None
 
-        self.data = None
-
     def connect_to_server(self):
         if not self.is_polling:
             if not self.name:
                 self.handle_widgets_menu()
                 if not self.name:
                     return
+                self.client = self.client or client.BCClient(self.handle_responses)
             else:
                 self.widget_state_change(DISABLED)
-            self.client = self.client or client.BCClient(self.handle_responses)
-            frame = root.children.get("frame_local_game", root)
-            # btn_create_game = frame.children.get("btn_create_game")
-            # if btn_create_game:
-            #     btn_create_game.config(command=self.connect_to_room)
-            frame.children["btn_quit"].config(command=lambda: _quit(self.client))
-            frame.children["btn_main_menu"].config(
-                command=lambda: draw_main_menu(self.client)
-            )
             threading.Thread(target=self.client.connect).start()
             self.is_polling = True
         if self.client.server_connected:
             self.is_polling = False
-            self.current_state()
+            if not self.active_widgets:
+                self.connect_to_room()
+            else:
+                self.widget_state_change(NORMAL)
         elif self.client.server_connected is None:
             root.after(250, self.connect_to_server)
         else:
             self.is_polling = False
-            self.widget_state_change(NORMAL)
+            if not self.active_widgets:
+                self.widget_state_change(NORMAL)
+            else:
+                root.nametowidget(".lbl_connecting").config(text="Problems with server")
 
     def handle_widgets_menu(self):
         frame = root.nametowidget(".frame_local_game")
@@ -177,14 +185,14 @@ class MultiplayerGame:
         self.client.connect_to_room(self.name, self.room_id)
 
     def handle_responses(self, data):
+        print("resp")
         if not data:
-            messagebox.showinfo("Error", "Problems with server. Reconnecting...")
             self.is_polling = False
             root.after(250, self.connect_to_server)
             return
         action = data["action"]
         value = data["value"]
-        if action == "connect_to_room":
+        if action == "connect_to_room" and not self.active_widgets:
             if value[0] == 0:
                 self.widget_state_change(NORMAL)
                 messagebox.showinfo("Error", value[1])
@@ -198,18 +206,27 @@ class MultiplayerGame:
                 self.opponent_name = value[1]
                 print("Ready to start the game")
                 self.start_new_game()
+        elif action == "send_guess":
+            self.start_answer(value)
+        elif action == "send_answer":
+            self.start_guess(value)
 
-    @staticmethod
-    def widget_state_change(state):
-        frame = root.nametowidget(".frame_local_game")
+    def widget_state_change(self, state):
+        frame = root.children.get("frame_local_game", root)
         if state == NORMAL:
             frame.children["lbl_connecting"].destroy()
         else:
-            Label(frame, text="Connecting...", pady=5, name="lbl_connecting").pack()
+            lbl = Label(frame, text="Connecting...", pady=5, name="lbl_connecting")
+            if frame == root:
+                lbl.grid(row=12, column=5, columnspan=4)
+            else:
+                lbl.pack()
         for widget_name in ("btn_create_game", "btn_join_game"):
             widget = frame.children.get(widget_name)
             if widget:
                 widget.config(state=state)
+        for widget in self.active_widgets:
+            widget.config(state=state)
 
     def start_new_game(self):
         for widget in root.winfo_children():
@@ -219,137 +236,107 @@ class MultiplayerGame:
         root.children["lbl_time_started"].config(
             text=self.start_time.strftime("%H:%M:%S")
         )
+        root.children["btn_quit"].config(
+            command=lambda: pop_up(
+                yes=lambda: _quit(self.client),
+                text="Are you sure, that you want to quit?",
+            )
+        )
+        root.children["btn_main_menu"].config(
+            command=lambda: pop_up(
+                yes=lambda: draw_main_menu(self.client),
+                text="Are you sure, that you want to leave the game?",
+            )
+        )
         root.children["lbl_versus"].config(text=f"{self.name} vs. {self.opponent_name}")
         Label(root, text="room").grid(row=12, column=0, columnspan=2)
         Label(root, text=self.room_id).grid(row=12, column=2)
 
-    #     self.start_guess()
-    #
-    # def start_guess(self):
-    #     draw_round(self.round)
-    #     self.you_guess = root.children[f"you_guess_{self.round}"]
-    #     self.op_bulls = root.children[f"op_bulls_{self.round}"]
-    #     self.op_cows = root.children[f"op_cows_{self.round}"]
-    #     self.you_guess.config(state=NORMAL)
-    #     self.you_guess.focus_set()
-    #     root.children["btn_send"].config(command=self.set_guesses)
-    #     handle_game_key(self.set_guesses, self.you_guess)
-    #
-    # def set_guesses(self):
-    #     self.data = self.you_guess.get()
-    #     if len(self.data) < 4:
-    #         messagebox.showinfo("Error", "There should be 4 digits")
-    #         return
-    #     self.you_guess.config(state=DISABLED)
-    #     self.send_guess()
-    #     self.polling(self.start_answer)
+        self.start_guess()
 
-    # def set_answers(self):
-    #     bulls, cows = self.op_bulls.get(), self.op_cows.get()
-    #     if not (bulls and cows):
-    #         messagebox.showinfo("Error", "Fields cannot be empty")
-    #         return
-    #     self.data = f"{bulls} {cows}"
-    #     # TODO: Сделать валидацию data через guessing
-    #     self.op_bulls.config(state=DISABLED)
-    #     self.op_cows.config(state=DISABLED)
-    #     self.polling(self.start_guess)
-    #
-    # def start_answer(self):
-    #     insert_value(root.children[f"op_guess_{self.round}"], self.interface.data)
-    #     self.op_bulls.config(state=NORMAL)
-    #     self.op_cows.config(state=NORMAL)
-    #     root.children["btn_send"].config(command=self.set_answers)
-    #     handle_game_key(self.set_answers, self.op_bulls, self.op_cows)
-    #
-    # def set_guesses(self):
-    #     self.data = self.you_guess.get()
-    #     if len(self.data) < 4:
-    #         messagebox.showinfo("Error", "There should be 4 digits")
-    #         return
-    #     self.you_guess.config(state=DISABLED)
-    #     self.polling(self.start_answer)
-    #
-    # def start_guess(self):
-    #     if self.interface.data:
-    #         bulls, cows = self.interface.data.split()
-    #         insert_value(root.children[f"you_bulls_{self.round}"], bulls)
-    #         insert_value(root.children[f"you_cows_{self.round}"], cows)
-    #         if self.op_bulls.get() == "4":
-    #             if bulls == "4":
-    #                 self.end_game("draw")
-    #                 return
-    #             self.end_game("opponent")
-    #             return
-    #         elif bulls == "4":
-    #             self.end_game("you")
-    #             return
-    #         self.round += 1
-    #     draw_round(self.round)
-    #     self.you_guess = root.children[f"you_guess_{self.round}"]
-    #     self.op_bulls = root.children[f"op_bulls_{self.round}"]
-    #     self.op_cows = root.children[f"op_cows_{self.round}"]
-    #     self.you_guess.config(state=NORMAL)
-    #     self.you_guess.focus_set()
-    #     root.children["btn_send"].config(command=self.set_guesses)
-    #     handle_game_key(self.set_guesses, self.you_guess)
-    #
-    # def polling(self, next_function):
-    #     if not self.polling_started:
-    #         root.children["btn_send"].config(state=DISABLED)
-    #         if isinstance(self.interface, multiplayer.Client):
-    #             threading.Thread(
-    #                 target=self.interface.send_data, args=(self.data,)
-    #             ).start()
-    #             threading.Thread(target=self.interface.get_data).start()
-    #         else:
-    #             threading.Thread(target=self.interface.get_data).start()
-    #             threading.Thread(
-    #                 target=self.interface.send_data, args=(self.data,)
-    #             ).start()
-    #         self.polling_started = True
-    #         self.polling(next_function)
-    #     elif not self.interface.connected:
-    #         messagebox.showinfo(
-    #             "Lost connection",
-    #             "There are some problems with connection, or your opponent has left.",
-    #         )
-    #         self.end_game("nobody")
-    #     elif not (self.interface.sent and self.interface.received):
-    #         root.after(1000, self.polling, next_function)
-    #     else:
-    #         root.children["btn_send"].config(state=NORMAL)
-    #         self.polling_started = False
-    #         next_function()
-    #
-    # def end_game(self, who_win):
-    #     for entry in (self.you_guess, self.op_bulls, self.op_cows):
-    #         if entry:
-    #             entry.config(state=DISABLED)
-    #     root.children["btn_send"].config(state=DISABLED)
-    #     if who_win == "nobody":
-    #         messagebox.showinfo("Attention", "You opponent has left")
-    #         return
-    #     root.children["lbl_player_won"].config(text=who_win)
-    #     cur_time = datetime.now()
-    #     root.children["lbl_time_ended"].config(text=cur_time.strftime("%H:%M:%S"))
-    #
-    #     duration = time.strftime(
-    #         "%Mm%Ss", time.gmtime((cur_time - self.start_time).total_seconds())
-    #     )
-    #     root.children["lbl_duration"].config(text=duration)
-    #     if who_win == "opponent":
-    #         messagebox.showinfo("Defeat", "You lost.")
-    #     elif who_win == "you":
-    #         messagebox.showinfo("Win", "You won.")
-    #     else:
-    #         messagebox.showinfo("Draw", "Draw :)")
+    def start_guess(self, opponent_answer=None):
+        if opponent_answer:
+            bulls, cows = opponent_answer
+            insert_value(root.children[f"you_bulls_{self.round}"], bulls)
+            insert_value(root.children[f"you_cows_{self.round}"], cows)
+            winner = None
+            if self.op_bulls.get() == "4":
+                if bulls == "4":
+                    winner = "draw"
+                else:
+                    winner = "opponent"
+            elif bulls == "4":
+                winner = "you"
+            if winner:
+                self.end_game(winner)
+                return
+            self.round += 1
+        draw_round(self.round)
+        self.you_guess = root.children[f"you_guess_{self.round}"]
+        self.op_bulls = root.children[f"op_bulls_{self.round}"]
+        self.op_cows = root.children[f"op_cows_{self.round}"]
+        self.you_guess.config(state=NORMAL)
+        self.you_guess.focus_set()
+        root.children["btn_send"].config(command=self.set_guesses)
+        handle_game_key(self.set_guesses, self.you_guess)
+        self.active_widgets = [self.you_guess, root.children["btn_send"]]
+
+    def set_guesses(self):
+        data = self.you_guess.get()
+        if len(data) < 4:
+            messagebox.showinfo("Error", "There should be 4 digits")
+            return
+        self.you_guess.config(state=DISABLED)
+        self.client.send_value(data, "guess")
+        self.active_widgets = [root.children["btn_send"]]
+
+    def start_answer(self, opponent_guess):
+        insert_value(root.children[f"op_guess_{self.round}"], opponent_guess)
+        self.op_bulls.config(state=NORMAL)
+        self.op_cows.config(state=NORMAL)
+        root.children["btn_send"].config(command=self.set_answers)
+        handle_game_key(self.set_answers, self.op_bulls, self.op_cows)
+        self.active_widgets = [self.op_bulls, self.op_cows, root.children["btn_send"]]
+
+    def set_answers(self):
+        bulls, cows = self.op_bulls.get(), self.op_cows.get()
+        if not (bulls and cows):
+            messagebox.showinfo("Error", "Fields cannot be empty")
+            return
+        # TODO: Сделать валидацию data через guessing
+        self.op_bulls.config(state=DISABLED)
+        self.op_cows.config(state=DISABLED)
+        self.client.send_value((bulls, cows), "answer")
+        self.active_widgets = [root.children["btn_send"]]
+
+    def end_game(self, who_win):
+        for widget in self.active_widgets:
+            widget.config(state=DISABLED)
+        root.children["btn_main_menu"].config(
+            command=lambda: draw_main_menu(self.client)
+        )
+        if who_win == "nobody":
+            messagebox.showinfo("Attention", "You opponent has left")
+            return
+        root.children["lbl_player_won"].config(text=who_win)
+        cur_time = datetime.now()
+        root.children["lbl_time_ended"].config(text=cur_time.strftime("%H:%M:%S"))
+
+        duration = time.strftime(
+            "%Mm%Ss", time.gmtime((cur_time - self.start_time).total_seconds())
+        )
+        root.children["lbl_duration"].config(text=duration)
+        if who_win == "opponent":
+            messagebox.showinfo("Defeat", "You lost.")
+        elif who_win == "you":
+            messagebox.showinfo("Win", "You won.")
+        else:
+            messagebox.showinfo("Draw", "Draw :)")
 
 
 def draw_join_game():
     def validate_ip_address(act, ind, new_val, old_val):
-        # при выделении участка и заменой его - ошибки
-        # отсутствие обработки ctrl команд
+        # TODO: ctrl команды, неправильная обработка замены вставкой
         val = get_val_before_validate(act, ind, new_val, old_val)
         nums = val.split(".")
         if len(nums) <= 4:
@@ -386,6 +373,7 @@ def draw_join_game():
             sequence, lambda event: entry_ip_handle(entry_room, room_example)
         )
     handle_game_key(MultiplayerGame, entry_room)
+    # TODO: сделать табуляцию ко второму фрейму
     frame_name = Frame(frame, name="frame_room")
     Label(frame_name, text="Room id", pady=5, padx=5).pack(side=LEFT)
     Entry(frame_name, name="room_id", width=5).pack(side=RIGHT)
@@ -435,19 +423,6 @@ def draw_main_menu(interface=None):
 
 
 def draw_game_field():
-    def pop_up(yes=None, no=None, text="Are you sure?", title="Attention!"):
-        def inner(func):
-            if func:
-                func()
-            top_level.destroy()
-
-        assert yes or no
-        top_level = Toplevel(root)
-        top_level.title = title
-        Label(top_level, text=text).grid(row=0, column=0, columnspan=2)
-        Button(top_level, text="Yes", command=lambda: inner(yes)).grid(row=1, column=0)
-        Button(top_level, text="No", command=lambda: inner(no)).grid(row=1, column=1)
-
     Label(root, text="YOU", pady=5).grid(row=0, column=0, columnspan=4)
     Label(root, text="№", pady=5).grid(row=1, column=0)
     Label(root, text="Guess", pady=5).grid(row=1, column=1)
@@ -470,7 +445,7 @@ def draw_game_field():
 
     Label(root, text="STATISTICS", pady=5).grid(row=2, column=11, columnspan=2)
     Label(root, text="you vs. comp", pady=5, name="lbl_versus").grid(
-        row=3, column=12, columnspan=2
+        row=3, column=11, columnspan=2
     )
     Label(root, text="Time started   ", pady=5).grid(row=4, column=11, stick="w")
     Label(root, text="?", pady=5, name="lbl_time_started").grid(row=4, column=12)
@@ -544,6 +519,20 @@ def decor_register(widget, func):
     return widget.register(func), "%d", "%i", "%S", "%s"
 
 
+def pop_up(yes=None, no=None, text="Are you sure?", title="Attention!"):
+    def inner(func):
+        if func:
+            func()
+        top_level.destroy()
+
+    assert yes or no
+    top_level = Toplevel(root)
+    top_level.title = title
+    Label(top_level, text=text).grid(row=0, column=0, columnspan=2)
+    Button(top_level, text="Yes", command=lambda: inner(yes)).grid(row=1, column=0)
+    Button(top_level, text="No", command=lambda: inner(no)).grid(row=1, column=1)
+
+
 def handle_game_key(func, *entry_fields):
     def inner_func(event):
         if event.char == "\r":
@@ -570,7 +559,7 @@ def _quit(interface=None):
 
 def main():
     root.title("Bulls and cows!")
-    root.geometry("530x360")
+    root.geometry("550x360")
 
     draw_main_menu()
     root.mainloop()

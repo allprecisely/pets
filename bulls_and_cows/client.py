@@ -51,9 +51,12 @@ class Client:
                     return
                 except AttributeError:
                     print("problems with server")
+                    return
             if data:
                 data = pickle.loads(data)
             response = self.handle_func(data)
+            if not data:
+                return
             if response:
                 self.send_data(response)
 
@@ -84,8 +87,8 @@ class BCClient(Client):
             }
         )
 
-    def send_guess(self, guess):
-        self.send_data({"action": "send_guess", "value": guess})
+    def send_value(self, guess, _type):
+        self.send_data({"action": f"send_{_type}", "value": guess})
 
 
 if __name__ == "__main__":

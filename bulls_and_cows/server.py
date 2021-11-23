@@ -60,15 +60,15 @@ class BCServer(Server):
     def __init__(self):
         """
         БД
+        # TODO: перенести в базу, чтобы при краше сервера все было ок
         users: {con_id: room_n}
         rooms: {
             room_n: {
                 players: {name1: con_id1, name2: con_id2},
-                # TODO: усложнить, чтобы можно было восстановить игру для игрока
-                # field: {
+                # field: [{
                 #     name1: [[guess1, bulls1, cows1], [guess2...]],
                 #     name2: [...],
-                # },
+                # }...],
                 field: {p1: [g1, b1, c], p2:...},
                 created_at: timestamp,
             }
@@ -82,15 +82,16 @@ class BCServer(Server):
 
     async def handle_data(self, con_id, data):
         if not data:
-            if con_id not in self.bd["users"]:
+            name = self.bd["users"].get(con_id)
+            if not name:
                 return
             del self.bd["users"][con_id]
             for room_id, room in self.bd["rooms"].items():
-                if con_id not in room['players'].values():
-                    if len(room['players']) == 1:
+                if con_id not in room["players"].values():
+                    if len(room["players"]) == 1:
                         del self.bd["rooms"][room_id]
                     else:
-                        room['players'][con_id] = ''
+                        room["players"][name] = ""
                     break
             return
         action = data["action"]
@@ -103,14 +104,14 @@ class BCServer(Server):
             2: ответ с именами
             """
             return {
-                "action": "connect_to_room",
+                "action": action,
                 "value": await self.connect_to_room(con_id, value),
             }
-        elif action == "send_guess":
-            return {
-                "action": "send_guess",
-                "value": await self.send_guess(con_id, value),
-            }
+        elif action.startswith("send_"):
+            _type = action[len("send_") :]
+            response = await self.send_value(con_id, value, _type)
+            if response:
+                return {"action": action, "value": response}
 
     async def connect_to_room(self, con_id, config):
         name, room_id = config["name"], config["room_id"]
@@ -120,21 +121,22 @@ class BCServer(Server):
             self.bd["rooms"][room] = {
                 "players": {name: con_id},
                 "created_at": datetime.now(),
-                "field": {},
+                "field": [{}],
             }
             self.bd["users"][con_id] = self.bd["rooms"][room]
             return 1, room
         room = self.bd["rooms"].get(room_id)
         if not room:
             return 0, "No room with such id"
-        if len(room['players']) == 1 and room['players'].get(name):
+        if len(room["players"]) == 1 and room["players"].get(name):
             return 0, "Player with such name is already in the room"
-        elif len(room['players']) == 2:
+        elif len(room["players"]) == 2 and room["players"].get(name) == "":
             return 0, "The room is occupied by other players"
 
         opponent_name = ""
-        for bd_name, bd_con_id in room['players'].items():
+        for bd_name, bd_con_id in room["players"].items():
             if name != bd_name and bd_con_id:
+                # TODO: как сделать гарантию доставки?
                 await self.send_data(
                     bd_con_id,
                     {
@@ -142,27 +144,31 @@ class BCServer(Server):
                         "value": (2, name),
                     },
                 )
-                opponent_name = self.bd["users"][bd_con_id]
-        room['players'][name] = con_id
+                opponent_name = bd_name
+        room["players"][name] = con_id
         self.bd["users"][con_id] = room
         return 2, opponent_name
 
-    async def send_guess(self, con_id, value):
+    async def send_value(self, con_id, value, _type):
         room = self.bd["users"][con_id]
         response = None
-        for bd_name, bd_con_id in room['players'].items():
+        if _type == "guess" and room["field"] and len(room["field"][-1]) == 2:
+            room["field"].append({})
+        for bd_name, bd_con_id in room["players"].items():
             if con_id == bd_con_id:
-                room['field'][bd_name]['guess'] = value
-            elif room['field'][bd_name]['guess']:
+                room["field"][-1].setdefault(bd_name, {})[_type] = value
+            elif room["field"][-1].get(bd_name, {}).get(_type):
+                # TODO: как сделать гарантию доставки?
                 await self.send_data(
                     bd_con_id,
                     {
-                        "action": "send_guess",
+                        "action": f"send_{_type}",
                         "value": value,
                     },
                 )
-                response = room['field'][bd_name]['guess']
+                response = room["field"][-1][bd_name][_type]
         return response
+
 
 if __name__ == "__main__":
     BCServer()

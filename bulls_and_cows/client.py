@@ -87,8 +87,8 @@ class BCClient(Client):
             }
         )
 
-    def send_value(self, guess, _type):
-        self.send_data({"action": f"send_{_type}", "value": guess})
+    def send_value(self, data):
+        self.send_data({"action": "send_value", "value": data})
 
 
 if __name__ == "__main__":

@@ -92,7 +92,7 @@ class BCClient(Client):
 
 
 if __name__ == "__main__":
-    client = Client("serverbc.herokuapp.com", 8765)
+    client = Client("serverbc.herokuapp.com", 80)
     try:
         inp = input("Input what to send: ")
         while inp != "q":

@@ -77,7 +77,7 @@ class Client:
 
 class BCClient(Client):
     def __init__(self, handle_func):
-        super().__init__("192.168.0.16", 8765, handle_func)
+        super().__init__("serverbc.herokuapp.com", 8765, handle_func)
 
     def connect_to_room(self, name, room_id=None):
         self.send_data(

@@ -140,7 +140,7 @@ class MultiplayerGame:
                 )
             else:
                 self.widget_state_change(DISABLED)
-            threading.Thread(target=self.client.connect).start()
+            threading.Thread(target=self.client.connect, daemon=True).start()
             self.is_polling = True
         if self.client.server_connected:
             self.is_polling = False

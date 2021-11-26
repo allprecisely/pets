@@ -118,14 +118,13 @@ class MultiplayerGame:
         self.opponent_name = ""
         self.room_id = ""
         self.start_time = None
-        self.turn = 1
+        self.turn = 0
         # for convenience
         self.you_guess = self.op_bulls = self.op_cows = self.btn_send = None
 
         frame = root.nametowidget(".frame_local_game")
         frame.nametowidget("btn_create_game").config(command=self.connect_to_server)
         self.connect_to_server()
-
 
     def connect_to_server(self):
         if not self.is_polling:
@@ -135,9 +134,7 @@ class MultiplayerGame:
                     return
                 self.client = self.client or client.BCClient(self.handle_responses)
                 frame = root.nametowidget(".frame_local_game")
-                frame.children["btn_quit"].config(
-                    command=lambda: _quit(self.client)
-                )
+                frame.children["btn_quit"].config(command=lambda: _quit(self.client))
                 frame.children["btn_main_menu"].config(
                     command=lambda: draw_main_menu(self.client)
                 )
@@ -202,7 +199,7 @@ class MultiplayerGame:
                 self.start_new_game()
                 self.start_guess()
                 if value[2]:
-                    bulls = None
+                    self.btn_send.config(state=DISABLED)
                     print(value[2])
                     for turn, player, guess, bulls, cows in value[2]:
                         print(turn, player, guess, bulls, cows)
@@ -213,10 +210,19 @@ class MultiplayerGame:
                         fill_entry(root.children[f"{g}_guess_{turn}"], guess)
                         fill_entry(root.children[f"{bc}_bulls_{turn}"], bulls)
                         fill_entry(root.children[f"{bc}_cows_{turn}"], cows)
-                    if bulls:
-                        self.start_guess()
-                    else:
+                    if (
+                        root.children[f"op_guess_{self.turn}"].get()
+                        and root.children[f"you_guess_{self.turn}"].get()
+                        and not root.children[f"op_bulls_{self.turn}"].get()
+                    ):
                         self.start_answer()
+                    elif (
+                        root.children[f"op_bulls_{self.turn}"].get()
+                        and root.children[f"you_bulls_{self.turn}"].get()
+                    ):
+                        self.start_guess()
+                    self.op_bulls = root.children[f"op_bulls_{self.turn}"]
+                    self.op_cows = root.children[f"op_cows_{self.turn}"]
                     messagebox.showinfo("Attention", "Continue playing...")
         elif action == "send_value":
             if value["type"] == "guess":
@@ -238,7 +244,6 @@ class MultiplayerGame:
                 if winner:
                     self.end_game(winner)
                     return
-                self.turn += 1
                 self.start_guess()
 
     def widget_state_change(self, state):
@@ -285,10 +290,9 @@ class MultiplayerGame:
         Label(root, text=self.room_id).grid(row=12, column=2)
 
     def start_guess(self):
+        self.turn += 1
         draw_turn(self.turn)
         self.you_guess = root.children[f"you_guess_{self.turn}"]
-        self.op_bulls = root.children[f"op_bulls_{self.turn}"]
-        self.op_cows = root.children[f"op_cows_{self.turn}"]
         self.you_guess.config(state=NORMAL)
         self.you_guess.focus_set()
         self.btn_send.config(command=self.set_guesses, state=NORMAL)
@@ -306,6 +310,8 @@ class MultiplayerGame:
         self.active_widgets = []
 
     def start_answer(self):
+        self.op_bulls = root.children[f"op_bulls_{self.turn}"]
+        self.op_cows = root.children[f"op_cows_{self.turn}"]
         self.op_bulls.config(state=NORMAL)
         self.op_cows.config(state=NORMAL)
         self.btn_send.config(command=self.set_answers, state=NORMAL)
